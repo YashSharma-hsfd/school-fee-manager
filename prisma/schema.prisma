@@ -11,6 +11,12 @@ enum Role {
   MANAGEMENT
 }
 
+enum StudentStatus {
+  ACTIVE
+  INACTIVE
+  WITHDRAWN
+}
+
 model User {
   id String @id @default(cuid())
   email String @unique
@@ -47,13 +53,18 @@ model Student {
   className       String
   guardianName    String
   guardianPhone   String
+  status          StudentStatus @default(ACTIVE)
+  statusChangedAt DateTime?
+  statusReason    String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   enrollments Enrollment[]
   payments Payment[]
   discounts Discount[]
+  openingCharges StudentCharge[] @relation("OpeningCharges")
   @@unique([schoolId, admissionNumber])
   @@unique([schoolId, id])
+  @@index([schoolId, status])
 }
 
 model School {
@@ -168,17 +179,20 @@ model Enrollment {
 model StudentCharge {
   id String @id @default(cuid())
   schoolId String
-  enrollmentId String
-  planItemId String
+  enrollmentId String?
+  planItemId String?
+  openingStudentId String?
   label String
   amountCents Int
   dueOn DateTime @db.Date
   createdAt DateTime @default(now())
-  enrollment Enrollment @relation(fields: [schoolId, enrollmentId], references: [schoolId, id], onDelete: Restrict)
-  planItem FeePlanItem @relation(fields: [schoolId, planItemId], references: [schoolId, id], onDelete: Restrict)
+  enrollment Enrollment? @relation(fields: [schoolId, enrollmentId], references: [schoolId, id], onDelete: Restrict)
+  planItem FeePlanItem? @relation(fields: [schoolId, planItemId], references: [schoolId, id], onDelete: Restrict)
+  openingStudent Student? @relation("OpeningCharges", fields: [schoolId, openingStudentId], references: [schoolId, id], onDelete: Restrict)
   allocations PaymentAllocation[]
   credits DiscountAllocation[]
   @@unique([schoolId, enrollmentId, planItemId])
+  @@unique([schoolId, openingStudentId])
   @@unique([schoolId, id])
   @@index([schoolId, dueOn])
 }
@@ -233,6 +247,9 @@ model Discount {
   recordedBy String
   recordedByName String
   createdAt DateTime @default(now())
+  reversedAt DateTime?
+  reversedBy String?
+  reversalReason String?
   student Student @relation(fields: [schoolId, studentId], references: [schoolId, id], onDelete: Restrict)
   allocations DiscountAllocation[]
   @@unique([schoolId, requestKey])

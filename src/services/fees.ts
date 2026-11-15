@@ -89,6 +89,7 @@ export async function enrollStudent(actor: SessionUser, schoolId: string, input:
 export async function enrollInTransaction(tx: Tx, actor: SessionUser, schoolId: string, data: z.infer<typeof enrollmentSchema>) {
     const student = await tx.student.findFirst({ where: { schoolId, id: data.studentId } });
     if (!student) throw new FeeRuleError("Student not found in this school");
+    if (student.status !== "ACTIVE") throw new FeeRuleError("Reactivate this student before enrolling or promoting them. Existing dues are preserved.");
     const plan = await tx.feePlan.findUnique({ where: { schoolId_academicYearId_classId: { schoolId, academicYearId: data.academicYearId, classId: data.classId } }, include: { items: true, academicYear: true, schoolClass: true } });
     if (!plan) throw new FeeRuleError("Configure the class fee plan for this academic year before enrolling");
     const existing = await tx.enrollment.findUnique({ where: { schoolId_studentId_academicYearId: { schoolId, studentId: student.id, academicYearId: data.academicYearId } } });
@@ -105,8 +106,8 @@ export async function enrollInTransaction(tx: Tx, actor: SessionUser, schoolId: 
 }
 
 export async function openCharges(tx: Tx, schoolId: string, studentId: string) {
-  const charges = await tx.studentCharge.findMany({ where: { schoolId, enrollment: { studentId } },
-    include: { allocations: { where: { payment: { reversedAt: null } } }, credits: true }, orderBy: [{ dueOn: "asc" }, { id: "asc" }] });
+  const charges = await tx.studentCharge.findMany({ where: { schoolId, OR: [{ enrollment: { studentId } }, { openingStudentId: studentId }] },
+    include: { allocations: { where: { payment: { reversedAt: null } } }, credits: { where: { discount: { reversedAt: null } } } }, orderBy: [{ dueOn: "asc" }, { id: "asc" }] });
   return charges.map(charge => ({ ...charge, settledCents: charge.allocations.reduce((sum, item) => sum + item.amountCents, 0) + charge.credits.reduce((sum, item) => sum + item.amountCents, 0) }));
 }
 
@@ -168,5 +169,40 @@ export async function reversePayment(actor: SessionUser, schoolId: string, input
     const reversed = await tx.payment.update({ where: { id: payment.id }, data: { reversedAt: new Date(), reversedBy: actor.id, reversalReason: data.reason } });
     await audit(tx, actor, schoolId, "PAYMENT_REVERSED", payment.id, { receiptNumber: payment.receiptNumber, reason: data.reason, amountCents: payment.amountCents });
     return reversed;
+  });
+}
+
+export async function reverseDiscount(actor: SessionUser, schoolId: string, input: unknown) {
+  const data = z.object({ discountId: idSchema, reason: z.string().trim().min(3).max(500) }).parse(input);
+  return inSchool(actor, schoolId, "payments", async tx => {
+    const discount = await tx.discount.findFirst({ where: { schoolId, id: data.discountId } });
+    if (!discount) throw new FeeRuleError("Discount not found");
+    if (discount.reversedAt) return discount;
+    const reversed = await tx.discount.update({ where: { id: discount.id }, data: { reversedAt: new Date(), reversedBy: actor.id, reversalReason: data.reason } });
+    await audit(tx, actor, schoolId, "DISCOUNT_REVERSED", discount.id, { reason: data.reason, amountCents: discount.amountCents, studentId: discount.studentId });
+    return reversed;
+  });
+}
+
+export async function correctCharge(actor: SessionUser, schoolId: string, input: unknown) {
+  const data = z.object({ chargeId: idSchema, amount: moneySchema, dueOn: dateSchema,
+    expectedAmount: z.coerce.number().int().positive(), expectedDueOn: dateSchema,
+    reason: z.string().trim().min(3).max(500),
+  }).parse(input);
+  return inSchool(actor, schoolId, "configure", async tx => {
+    const charge = await tx.studentCharge.findFirst({ where: { schoolId, id: data.chargeId }, include: {
+      allocations: { where: { payment: { reversedAt: null } } }, credits: { where: { discount: { reversedAt: null } } },
+    } });
+    if (!charge) throw new FeeRuleError("Charge not found");
+    if (charge.amountCents === data.amount && dateOnly(charge.dueOn) === dateOnly(data.dueOn)) return charge;
+    if (charge.amountCents !== data.expectedAmount || dateOnly(charge.dueOn) !== dateOnly(data.expectedDueOn)) throw new FeeRuleError("Charge changed. Reload before correcting it.");
+    const settled = charge.allocations.reduce((sum, a) => sum + a.amountCents, 0) + charge.credits.reduce((sum, a) => sum + a.amountCents, 0);
+    if (data.amount < settled) throw new FeeRuleError("Amount cannot be less than active payments and discounts. Reverse incorrect entries first.");
+    const updated = await tx.studentCharge.update({ where: { id: charge.id }, data: { amountCents: data.amount, dueOn: data.dueOn } });
+    await audit(tx, actor, schoolId, "CHARGE_CORRECTED", charge.id, {
+      before: { amountCents: charge.amountCents, dueOn: dateOnly(charge.dueOn) },
+      after: { amountCents: data.amount, dueOn: dateOnly(data.dueOn) }, reason: data.reason,
+    });
+    return updated;
   });
 }

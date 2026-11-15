@@ -42,7 +42,7 @@ test.describe("database-backed staff login", () => {
     await page.getByLabel("Password").fill(password);
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(page).toHaveURL(/\/admin\/dashboard$/);
-    await page.getByRole("link", { name: "Manage students" }).click();
+    await page.getByRole("button", { name: "Manage students", exact: true }).click();
     await page.getByLabel("Student name", { exact: true }).fill("Synthetic UI Student");
     await page.getByLabel("Admission number", { exact: true }).fill(`UI-${suffix}`);
     await page.getByLabel("Class", { exact: true }).fill("7A");

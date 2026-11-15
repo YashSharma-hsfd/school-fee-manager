@@ -11,8 +11,12 @@ const inputClass = "mt-1 w-full rounded-md border border-slate-300 bg-white px-3
 export function SchoolForm({ action, fields, submit, children }: Props) {
   const formId = useId();
   const hydrated = useHydrated();
-  const [state, dispatch, pending] = useActionState(action, { error: "", success: "" });
   const [values, setValues] = useState<Record<string, string>>(() => Object.fromEntries(fields.map(field => [field.name, field.value ?? (field.options?.[0]?.value || "")])));
+  const [state, dispatch, pending] = useActionState(async (previous: SchoolFormState, data: FormData) => {
+    const result = await action(previous, data);
+    if (result.success) setValues(current => Object.fromEntries(Object.entries(current).map(([name, value]) => [name, fields.find(field => field.name === name)?.type === "password" ? "" : value])));
+    return result;
+  }, { error: "", success: "" });
   return <form action={dispatch} className="space-y-4">
     <fieldset disabled={pending || !hydrated} className="space-y-4">
       {fields.map(field => <div key={field.name} hidden={field.type === "hidden"}>

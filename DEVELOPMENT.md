@@ -2,15 +2,21 @@
 
 ## Current state
 
-Student creation has a Prisma model, migration, validated contact fields, admission-number normalization, and an admin-only service. Staff login, database-backed sessions, logout, login throttling, and server-side role guards are implemented. The student UI remains pending. Future student actions must use `readSession` from `src/lib/auth.ts`, never request-supplied roles. See README for staff provisioning and test setup.
+MVP feature scope is frozen after student lifecycle and the operational dashboard; see docs/mvp-scope.md. The application includes school-scoped student administration, staff authentication/memberships, fee plans/enrollment, partial payments/receipts, reversals/corrections, dated collection reports/exports, CSV import, bulk promotion, staff recovery, audit filters and the operational dashboard. Native Excel support and further product features are deferred.
 
-The migration has not been applied to a database. Set a development `DATABASE_URL` and run `npm run db:migrate` before connecting the student service. Admission numbers are stored uppercase and unique school-wide. Student creation requires name, admission number, class, guardian name, and guardian phone. No real student records are included.
+Student lifecycle is Active/Inactive/Withdrawn with audited reasons and reactivation. Non-active students cannot enroll/promote; existing charges, receipts and collections remain. Directory filters default to Active, while financial totals include all statuses. Dashboards show school-local daily/monthly collections, outstanding/overdue amounts, lifecycle counts, no-fee alerts, recent receipts and role-specific shortcuts.
 
-The SSH origin and local commit identity are configured. Student management and CI were committed by the user; the current branch is `feat/student-management`. This session cannot write `.git/config` or create branch references.
+The new 20261115150000_student_status migration adds lifecycle fields and an index; existing students become Active. It has not been applied to the development database in this session. Stop the app, then run `npm run db:prepare` before using the new code. No database reset is needed.
 
-Latest local verification: lint passed with an existing PostCSS export warning; typecheck and all 16 unit tests passed. The default Turbopack build failed when its CSS worker exited during startup in this environment. `npx next build --webpack` passed. Git branch creation remains blocked by read-only `.git` access, and the SSH check could not resolve `github.com`.
+Verification on 2026-11-15: 132 unit tests, typecheck, Prisma schema validation and the isolated Webpack production build passed. Lint passed with the existing PostCSS warning. Fifteen PostgreSQL tests are gated by FEES_E2E; the isolated runner could not reach localhost:5432 from this execution environment. Earlier, the user independently verified PostgreSQL access and passed all 136 tests and the production build for the preceding feature set. New lifecycle/dashboard database regressions bring the expected full count to 147. Browser tests remain deferred at the user's request; new lifecycle coverage has been added but not run.
 
-Playwright verification is incomplete: the development-server startup stalled, and a retry could not detect the running production server and attempted to start another server. Both browser runs were stopped; no browser-test pass is claimed.
+For constrained local builds, set `NEXT_BUILD_WORKERS=1` to use a single static-generation worker. `npm run build -- --webpack` is available if the default Turbopack worker fails. Set `NEXT_TEST_BUILD=1` to use the separate .next-test folder. These flags do not change product behavior. This session has not committed or pushed the feature changes.
+
+## Manual-review refinements (2026-11-16)
+
+Implemented clearer link/button/file-picker affordances, class and guardian search in student directories, independent lifecycle/fee-status filters, filtered balance/collection downloads and full transaction history/export including discounts and both reversal types. Invalid report ranges show an error rather than falling back to unfiltered results. Filters persist through pagination/downloads and reset correctly in the visible form. No schema migration is needed for these refinements.
+
+Latest verification: 138 unit tests, typecheck and lint passed (one pre-existing PostCSS warning). Sixteen PostgreSQL tests are available (expected combined count 154), but database access remains blocked in this execution environment. The current isolated Webpack build attempt failed with EPERM creating a generated output directory; no current build pass is claimed. Browser automation remains deferred by the user. Added regression coverage for shared filter scopes, numeric signed reversal exports, school-local activity dates and full-history reconciliation.
 
 ## 1. Local tools
 

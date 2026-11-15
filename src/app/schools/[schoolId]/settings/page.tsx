@@ -1,3 +1,4 @@
+import { manageStaff } from "@/actions/operations";
 import { schoolAccess } from "@/lib/school";
 import { prisma } from "@/lib/prisma";
 import { FeePlanForm, SchoolForm } from "@/components/school-forms";
@@ -6,13 +7,13 @@ import { displayMoney, dateOnly } from "@/services/fee-calculations";
 
 export default async function SettingsPage({ params }: { params: Promise<{ schoolId: string }> }) {
   const { schoolId } = await params;
-  const { membership } = await schoolAccess(schoolId);
+  const { membership, user } = await schoolAccess(schoolId);
   if (!membership.configureFees && !membership.manageAccess) return <main className="mx-auto max-w-6xl p-8"><p>You do not have configuration permissions.</p></main>;
   const [years, classes, plans, members] = await Promise.all([
     prisma.academicYear.findMany({ where: { schoolId }, orderBy: { startsOn: "desc" } }),
     prisma.schoolClass.findMany({ where: { schoolId }, orderBy: { name: "asc" } }),
     prisma.feePlan.findMany({ where: { schoolId }, include: { academicYear: true, schoolClass: true, items: { orderBy: [{ dueOn: "asc" }, { label: "asc" }] } }, orderBy: { createdAt: "desc" } }),
-    membership.manageAccess ? prisma.schoolMembership.findMany({ where: { schoolId }, include: { user: { select: { name: true, email: true } } } }) : [],
+    membership.manageAccess ? prisma.schoolMembership.findMany({ where: { schoolId }, include: { user: { select: { name: true, email: true, role: true, active: true } } } }) : [],
   ]);
   return <main className="mx-auto max-w-6xl px-6 py-10"><h1 className="mb-8 text-3xl font-semibold">School configuration</h1>
     {membership.configureFees && <>
@@ -23,6 +24,15 @@ export default async function SettingsPage({ params }: { params: Promise<{ schoo
       <section className="mt-6 max-w-2xl rounded-xl border bg-white p-6"><h2 className="mb-4 text-lg font-semibold">Class fee plan</h2>{years.length && classes.length ? <FeePlanForm action={setupSchool.bind(null, schoolId, "plan")} years={years.map(year => ({ value: year.id, label: year.name }))} classes={classes.map(item => ({ value: item.id, label: item.name }))} /> : <p>Add an academic year and class first.</p>}</section>
       <section className="mt-8"><h2 className="mb-4 text-xl font-semibold">Configured fee plans</h2><div className="grid items-start gap-5 md:grid-cols-2">{plans.map(plan => <details key={plan.id} className="rounded-xl border bg-white p-5"><summary className="cursor-pointer font-medium">{plan.schoolClass.name} · {plan.academicYear.name} · {displayMoney(plan.items.reduce((sum, item) => sum + item.amountCents, 0))} annually</summary><ul className="mt-4 space-y-2 text-sm">{plan.items.map(item => <li key={item.id} className="flex justify-between gap-4"><span>{item.label} · due {dateOnly(item.dueOn)}</span><span>{displayMoney(item.amountCents)}</span></li>)}</ul></details>)}</div></section>
     </>}
-    {membership.manageAccess && <section className="mt-8 max-w-2xl rounded-xl border bg-white p-6"><h2 className="mb-4 text-lg font-semibold">School staff access</h2><p className="mb-4 text-sm text-slate-500">Use an existing staff account. Roles apply only to this school. Fee configuration and staff-access permissions are separate grants.</p><SchoolForm action={grantAccess.bind(null, schoolId)} submit="Save school access" fields={[{ name: "email", label: "Staff email", type: "email" }, { name: "role", label: "Role", options: [{ value: "ADMIN", label: "Administration — students and enrollment" }, { value: "ACCOUNTANT", label: "Accountant — payments, receipts and discounts" }, { value: "MANAGEMENT", label: "Management — read-only reports" }] }, { name: "configureFees", label: "May configure fees, classes and years", type: "checkbox" }, { name: "manageAccess", label: "May manage school staff access", type: "checkbox" }]} /><ul className="mt-5 space-y-2 text-sm text-slate-500">{members.map(member => <li key={member.userId}>{member.user.name} ({member.user.email}): {member.role}{member.configureFees ? ", fee configuration" : ""}{member.manageAccess ? ", access management" : ""}</li>)}</ul></section>}
+    {membership.manageAccess && user.role === "ADMIN" && <section className="mt-8 max-w-2xl rounded-xl border bg-white p-6"><h2 className="mb-4 text-lg font-semibold">Create staff account</h2><SchoolForm action={manageStaff.bind(null, schoolId, "create")} submit="Create staff account" fields={[
+      { name: "name", label: "New staff name" }, { name: "email", label: "New staff email", type: "email" },
+      { name: "role", label: "New staff role", options: ["ACCOUNTANT", "MANAGEMENT", "ADMIN"].map(role => ({ value: role, label: role })) },
+      { name: "password", label: "Initial password (at least 12 characters)", type: "password" },
+      { name: "currentPassword", label: "Your current password", type: "password" },
+    ]} /><p className="mt-3 text-xs text-slate-500">The account gets membership in this school. Configuration and access-management grants are assigned separately below.</p></section>}
+    {membership.manageAccess && <section className="mt-8 max-w-2xl rounded-xl border bg-white p-6"><h2 className="mb-4 text-lg font-semibold">School staff access</h2><p className="mb-4 text-sm text-slate-500">Use an existing staff account. Roles apply only to this school. Fee configuration and staff-access permissions are separate grants.</p><SchoolForm action={grantAccess.bind(null, schoolId)} submit="Save school access" fields={[{ name: "email", label: "Staff email", type: "email" }, { name: "role", label: "Role", options: [{ value: "ADMIN", label: "Administration — students and enrollment" }, { value: "ACCOUNTANT", label: "Accountant — payments, receipts and discounts" }, { value: "MANAGEMENT", label: "Management — read-only reports" }] }, { name: "configureFees", label: "May configure fees, classes and years", type: "checkbox" }, { name: "manageAccess", label: "May manage school staff access", type: "checkbox" }]} /><ul className="mt-5 space-y-2 text-sm text-slate-500">{members.map(member => <li key={member.userId}>{member.user.name} ({member.user.email}): {member.role}{member.configureFees ? ", fee configuration" : ""}{member.manageAccess ? ", access management" : ""}{member.userId !== user.id && <details className="mt-2 rounded border p-3"><summary className="cursor-pointer text-indigo-700">Manage {member.user.name}</summary><div className="mt-4"><SchoolForm action={manageStaff.bind(null, schoolId, "revoke")} submit="Remove school access" fields={[{ name: "userId", label: "", type: "hidden", value: member.userId }]} /></div>{user.role === "ADMIN" && member.user.role !== "ADMIN" && member.user.active && <div className="mt-6"><h3 className="mb-3 font-medium">Recover staff password</h3><p className="mb-3">Confirm the staff member&apos;s identity before resetting. All their signed-in sessions will end. Recovery is blocked if the account belongs to schools you do not manage.</p><SchoolForm action={manageStaff.bind(null, schoolId, "recover")} submit="Reset staff password" fields={[
+      { name: "userId", label: "", type: "hidden", value: member.userId }, { name: "password", label: "New staff password", type: "password" },
+      { name: "currentPassword", label: "Your current password", type: "password" }, { name: "reason", label: "Recovery reason" },
+    ]} /></div>}</details>}</li>)}</ul></section>}
   </main>;
 }

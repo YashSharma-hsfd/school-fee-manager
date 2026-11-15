@@ -100,7 +100,7 @@ test.describe("school fees browser flow", () => {
     await login(2);
     await page.goto(`/schools/${schoolId}/reports`);
     await expect(page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Outstanding", exact: true }) })).toContainText("900.00");
-    await expect(page.getByRole("article").filter({ hasText: "Total received (all time)" })).toContainText("200.00");
+    await expect(page.getByText("Net received: 200.00", { exact: true })).toBeVisible();
     await page.goto(accountUrl);
     await expect(page.getByRole("button", { name: "Record payment & issue receipt", exact: true })).toHaveCount(0);
     await page.goto(`/schools/${otherSchoolId}`);

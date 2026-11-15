@@ -10,6 +10,8 @@ export default async function SchoolLayout({ children, params }: { children: Rea
     <Link href="/schools">All schools</Link><Link href={`/schools/${schoolId}`} className="font-semibold">{school.name}</Link>
     {membership.role === "ADMIN" && <form action={selectSchool.bind(null, schoolId, "students")}><button className="font-medium text-indigo-700">Student records</button></form>}
     <Link href={`/schools/${schoolId}/reports`}>Reports & audit</Link>
+    <Link href="/account">Your password</Link>
+    {membership.role === "ADMIN" && <Link href={`/schools/${schoolId}/operations`}>Import & promotion</Link>}
     {(membership.configureFees || membership.manageAccess) && <Link href={`/schools/${schoolId}/settings`}>Configuration</Link>}
     <form action={logout} className="ml-auto"><button>Sign out</button></form>
   </nav>{children}</>;

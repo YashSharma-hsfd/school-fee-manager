@@ -12,6 +12,7 @@ export default async function LoginPage() {
       <h1 className="mt-4 text-3xl font-semibold tracking-tight">Staff sign in</h1>
       <p className="mb-8 mt-2 text-sm text-slate-500">Use the staff account provided by your administrator.</p>
       <LoginForm />
+      <p className="mt-5 text-sm text-slate-500">Forgot your password? Ask your school administrator to verify your identity and reset it. Administrator accounts require recovery by the system owner.</p>
     </section>
   </main>;
 }
