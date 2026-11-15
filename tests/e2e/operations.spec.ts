@@ -198,4 +198,27 @@ test.describe("school operations browser flows", () => {
     await expect(page.getByRole("button", { name: "Save academic-year record", exact: true })).toBeVisible();
     await expect(page.getByRole("article").filter({ hasText: "Total outstanding" })).toContainText("990.00");
   });
+
+  test("guides each school role through navigation, student lookup and its account tasks", async ({page}) => {
+    const s=await student();
+    for(const [index,title] of ["Admin workspace","Accountant workspace","Management workspace"].entries()){
+      await login(page,users[index].email);
+      await page.goto(`/schools/${schoolId}`);
+      await expect(page.getByRole("heading",{name:title,exact:true})).toBeVisible();
+      const navigation=page.getByRole("navigation",{name:"School navigation",exact:true});
+      await expect(navigation.getByRole("link",{name:"Overview",exact:true})).toHaveAttribute("aria-current","page");
+      await navigation.getByRole("link",{name:"Student accounts",exact:true}).click();
+      await expect(page).toHaveURL(new RegExp(`/schools/${schoolId}/students$`));
+      await expect(navigation.getByRole("link",{name:"Student accounts",exact:true})).toHaveAttribute("aria-current","page");
+      await page.getByLabel("Find student",{exact:true}).fill(s.admissionNumber);
+      await page.getByRole("button",{name:"Search",exact:true}).click();
+      await page.getByRole("link",{name:"View account",exact:true}).click();
+      await expect(page.getByRole("heading",{name:s.name,exact:true})).toBeVisible();
+      await expect(page.getByRole("link",{name:"Collect payment",exact:true})).toHaveCount(index===1?1:0);
+      await expect(page.getByRole("link",{name:"Enroll / promote",exact:true})).toHaveCount(index===0?1:0);
+      await expect(navigation.getByRole("button",{name:"Student records",exact:true})).toHaveCount(index===0?1:0);
+      await navigation.getByRole("link",{name:"Reports & audit",exact:true}).click();
+      await expect(navigation.getByRole("link",{name:"Reports & audit",exact:true})).toHaveAttribute("aria-current","page");
+    }
+  });
 });

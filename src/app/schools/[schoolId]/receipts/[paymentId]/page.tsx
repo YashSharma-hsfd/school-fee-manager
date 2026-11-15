@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Button } from "@/components/ui/button";
 import { notFound } from "next/navigation";
 import { schoolAccess } from "@/lib/school";
 import { prisma } from "@/lib/prisma";
@@ -17,7 +18,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ school
       <table className="w-full text-left text-sm"><thead><tr className="border-b"><th className="py-3">Fee / academic year</th><th className="py-3 text-right">Amount received</th></tr></thead><tbody>{payment.allocations.map(item => <tr key={item.id} className="border-b"><td className="py-3">{item.charge.label} · {(item.charge.enrollment?.academicYear.name || "Opening balance")} · {(item.charge.enrollment?.schoolClass.name || "")}<span className="block text-xs text-slate-500">Due {dateOnly(item.charge.dueOn)}</span></td><td className="py-3 text-right">{displayMoney(item.amountCents)}</td></tr>)}</tbody></table>
       <p className="mt-6 text-right text-xl font-semibold">Total received: {displayMoney(payment.amountCents)}</p>
     </article>
-    <div className="my-6 flex items-center justify-between print:hidden"><Link className="text-indigo-700" href={`/schools/${schoolId}/students/${payment.studentId}`}>Back to student account</Link><PrintReceipt /></div>
+    <div className="my-6 flex flex-wrap items-center justify-between gap-4 print:hidden"><Link className="text-indigo-700" href={`/schools/${schoolId}/students/${payment.studentId}`}>Back to student account</Link><div className="flex flex-wrap gap-3"><PrintReceipt /><Button asChild variant="outline"><Link href={`/schools/${schoolId}/students`}>{membership.role === "ACCOUNTANT" ? "Collect next payment" : "Find another student"}</Link></Button></div></div><p className="text-sm text-slate-500 print:hidden">To save a PDF, choose Save as PDF in the print dialog. Reprinting keeps this receipt number.</p>
     {membership.role === "ACCOUNTANT" && !payment.reversedAt && <section className="mt-8 rounded-xl border border-red-200 bg-white p-6 print:hidden"><h2 className="mb-3 font-semibold">Correct an incorrectly recorded payment</h2><p className="mb-4 text-sm text-slate-500">Reverse this payment before entering a corrected one. The original receipt stays in history and its allocations stop reducing dues.</p><SchoolForm action={reverse.bind(null, schoolId, paymentId)} submit="Reverse payment" fields={[{ name: "reason", label: "Reason for reversal" }]} /></section>}
   </main>;
 }

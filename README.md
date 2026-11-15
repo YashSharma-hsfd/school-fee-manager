@@ -4,6 +4,10 @@ Next.js App Router, TypeScript, Tailwind, Prisma/PostgreSQL and Zod. Includes sc
 
 MVP feature scope is frozen after student lifecycle and the operational dashboard. See [MVP scope](docs/mvp-scope.md).
 
+See [user workflows](docs/user-workflows.md) for the Administration, Accountant and Management screen-by-screen paths. Shared school navigation shows the current role and active page; Student accounts is the dedicated search workspace, with shortcuts from accounts to charges/payment/history and from receipts back to the next student.
+
+Cloud pilot setup: [Neon PostgreSQL setup](docs/cloud-postgresql.md). Dedicated cloud commands use the ignored `.env.cloud.local` file, keeping normal development and tests on the local database.
+
 ## Run locally
 
 Requires Node.js 22.12+, npm and local PostgreSQL. Use synthetic data during development.

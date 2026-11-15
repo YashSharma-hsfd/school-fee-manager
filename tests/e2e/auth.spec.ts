@@ -8,7 +8,7 @@ test("visitors are sent to staff sign in", async ({ page }) => {
   await expect(page.getByLabel("Password")).toHaveAttribute("type", "password");
 });
 
-for (const path of ["/admin/dashboard", "/admin/students", "/accountant", "/account", "/schools", "/schools/forged-school", "/schools/forged-school/reports", "/schools/forged-school/operations", "/schools/forged-school/reports/export?kind=collections"]) {
+for (const path of ["/admin/dashboard", "/admin/students", "/accountant", "/account", "/schools", "/schools/forged-school", "/schools/forged-school/students", "/schools/forged-school/reports", "/schools/forged-school/operations", "/schools/forged-school/reports/export?kind=collections"]) {
   test(`blocks unauthenticated access to ${path}`, async ({ page, context }) => {
     await context.addCookies([{ name: "school-fee-session", value: "forged", domain: "localhost", path: "/" }]);
     await page.goto(path);

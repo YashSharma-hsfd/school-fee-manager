@@ -18,6 +18,12 @@ Implemented clearer link/button/file-picker affordances, class and guardian sear
 
 Latest verification: 138 unit tests, typecheck and lint passed (one pre-existing PostCSS warning). Sixteen PostgreSQL tests are available (expected combined count 154), but database access remains blocked in this execution environment. The current isolated Webpack build attempt failed with EPERM creating a generated output directory; no current build pass is claimed. Browser automation remains deferred by the user. Added regression coverage for shared filter scopes, numeric signed reversal exports, school-local activity dates and full-history reconciliation.
 
+## Role workflow UI (2026-11-16)
+
+The school and administration layouts now share one workspace header with school-specific role badges, active navigation, school switching and account actions. Accountant landing lists assigned schools directly. A dedicated school/student search route reuses the existing directory and authorization guard. Role guides, account task anchors, guardian identity details, setup-section shortcuts and a receipt-to-next-student action make the three role paths explicit. See docs/user-workflows.md.
+
+UI-only refinement: existing financial rules and server authorization remain unchanged, and no migration is required. Latest checks: 143 unit tests, typecheck, lint (existing PostCSS warning) and diff checks passed. Sixteen database tests remain unrun in this environment. The build attempt was blocked by EPERM creating generated .next-test files. Browser role-walkthrough scenarios were added but remain deferred; full browser/production UI validation is not claimed. These changes have not been committed or pushed.
+
 ## 1. Local tools
 
 Install Node.js LTS with npm on Windows, reopen the terminal and Codex, then verify:
