@@ -2,11 +2,11 @@
 
 ## Current state
 
-The repository has a Next.js starter with installed dependencies and a package lockfile. Student creation now has a Prisma model, an initial migration, validated contact fields, admission-number normalization, and an admin-only service with unit tests. Authentication and the student UI are not implemented yet. The service's `readSession` dependency must resolve a verified server session before a route or server action exposes it; never populate that dependency from request data. Its repository dependency accepts Prisma's `prisma.student` delegate.
+Student creation has a Prisma model, migration, validated contact fields, admission-number normalization, and an admin-only service. Staff login, database-backed sessions, logout, login throttling, and server-side role guards are implemented. The student UI remains pending. Future student actions must use `readSession` from `src/lib/auth.ts`, never request-supplied roles. See README for staff provisioning and test setup.
 
 The migration has not been applied to a database. Set a development `DATABASE_URL` and run `npm run db:migrate` before connecting the student service. Admission numbers are stored uppercase and unique school-wide. Student creation requires name, admission number, class, guardian name, and guardian phone. No real student records are included.
 
-The SSH origin and local commit identity are configured and verified. This session cannot write `.git/config` or create branch references. No commit or push has been made for student management.
+The SSH origin and local commit identity are configured. Student management and CI were committed by the user; the current branch is `feat/student-management`. This session cannot write `.git/config` or create branch references.
 
 Latest local verification: lint passed with an existing PostCSS export warning; typecheck and all 16 unit tests passed. The default Turbopack build failed when its CSS worker exited during startup in this environment. `npx next build --webpack` passed. Git branch creation remains blocked by read-only `.git` access, and the SSH check could not resolve `github.com`.
 
@@ -59,7 +59,7 @@ npm run db:generate
 npm run dev
 ```
 
-Do not overwrite an existing .env. Commit package-lock.json after installation. Schema models and an initial migration are a separate feature; use a development database for npm run db:migrate.
+Do not overwrite an existing .env. Commit package-lock.json after installation. Apply committed migrations and generate the client with npm run db:prepare while the development server is stopped. Use a development database for npm run db:migrate.
 
 ## 4. Feature workflow
 
@@ -70,11 +70,11 @@ Do not overwrite an existing .env. Commit package-lock.json after installation. 
 5. Commit and push when requested, open a pull request, review, then merge.
 6. Validate a preview deployment before releasing to production.
 
-GitHub Actions now checks lint, types, unit tests, build, and the placeholder dashboard browser flow on pushes and pull requests. The workflow does not require database secrets; database integration tests are still pending.
+GitHub Actions checks lint, types, unit tests, build, and staff browser flows using a temporary PostgreSQL service with synthetic records. No external database secrets are needed.
 
-Next milestones: login and roles; student UI and fee schedules; payments and receipts; reports and audit history; deployment. Keep development and production databases separate and arrange backups before using real records.
+Implemented: school-scoped student management, fee plans and due dates, enrollment, partial payments, discounts, receipts, reversals, reports and audit history. Next milestones: Excel imports, configuration amendments, deployment. Keep development and production databases separate and arrange backups before using real records.
 
-Deployment provider, database provider, currency, academic-year rules, and receipt numbering remain decisions to make before implementing the affected features.
+Deployment and production database providers remain open. See docs/fee-records.md for implemented academic-year, receipt, permission and payment rules.
 
 ## 5. Working with Codex efficiently
 

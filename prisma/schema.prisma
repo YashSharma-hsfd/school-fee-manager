@@ -5,14 +5,261 @@ datasource db {
   provider = "postgresql"
   url = env("DATABASE_URL")
 }
+enum Role {
+  ADMIN
+  ACCOUNTANT
+  MANAGEMENT
+}
+
+model User {
+  id String @id @default(cuid())
+  email String @unique
+  name String
+  passwordHash String
+  role Role
+  active Boolean @default(true)
+  sessions Session[]
+  memberships SchoolMembership[]
+  createdAt DateTime @default(now())
+}
+
+model Session {
+  tokenHash String @id
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model LoginAttempt {
+  email String @id
+  count Int @default(1)
+  expiresAt DateTime
+}
+
 model Student {
   id              String   @id @default(cuid())
-  admissionNumber String   @unique
+  admissionNumber String
+  schoolId        String?
+  school          School? @relation(fields: [schoolId], references: [id], onDelete: Restrict)
   name            String
   className       String
   guardianName    String
   guardianPhone   String
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+  enrollments Enrollment[]
+  payments Payment[]
+  discounts Discount[]
+  @@unique([schoolId, admissionNumber])
+  @@unique([schoolId, id])
+}
+
+model School {
+  id String @id @default(cuid())
+  name String
+  code String @unique
+  nextReceipt Int @default(0)
+  createdAt DateTime @default(now())
+  memberships SchoolMembership[]
+  students Student[]
+  years AcademicYear[]
+  classes SchoolClass[]
+  components FeeComponent[]
+  auditEvents AuditEvent[]
+}
+
+model SchoolMembership {
+  schoolId String
+  userId String
+  role Role
+  configureFees Boolean @default(false)
+  manageAccess Boolean @default(false)
+  school School @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  @@id([schoolId, userId])
+  @@index([userId])
+}
+
+model AcademicYear {
+  id String @id @default(cuid())
+  schoolId String
+  name String
+  startsOn DateTime @db.Date
+  endsOn DateTime @db.Date
+  school School @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  plans FeePlan[]
+  enrollments Enrollment[]
+  @@unique([schoolId, name])
+  @@unique([schoolId, id])
+}
+
+model SchoolClass {
+  id String @id @default(cuid())
+  schoolId String
+  name String
+  school School @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  plans FeePlan[]
+  enrollments Enrollment[]
+  @@unique([schoolId, name])
+  @@unique([schoolId, id])
+}
+
+model FeeComponent {
+  id String @id @default(cuid())
+  schoolId String
+  name String
+  school School @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  items FeePlanItem[]
+  @@unique([schoolId, name])
+  @@unique([schoolId, id])
+}
+
+model FeePlan {
+  id String @id @default(cuid())
+  schoolId String
+  academicYearId String
+  classId String
+  createdAt DateTime @default(now())
+  createdBy String
+  academicYear AcademicYear @relation(fields: [schoolId, academicYearId], references: [schoolId, id], onDelete: Restrict)
+  schoolClass SchoolClass @relation(fields: [schoolId, classId], references: [schoolId, id], onDelete: Restrict)
+  items FeePlanItem[]
+  enrollments Enrollment[]
+  @@unique([schoolId, academicYearId, classId])
+  @@unique([schoolId, id])
+}
+
+model FeePlanItem {
+  id String @id @default(cuid())
+  schoolId String
+  planId String
+  componentId String
+  label String
+  installment Int
+  amountCents Int
+  dueOn DateTime @db.Date
+  plan FeePlan @relation(fields: [schoolId, planId], references: [schoolId, id], onDelete: Restrict)
+  component FeeComponent @relation(fields: [schoolId, componentId], references: [schoolId, id], onDelete: Restrict)
+  charges StudentCharge[]
+  @@unique([schoolId, planId, componentId, installment])
+  @@unique([schoolId, id])
+}
+
+model Enrollment {
+  id String @id @default(cuid())
+  schoolId String
+  studentId String
+  academicYearId String
+  classId String
+  feePlanId String
+  createdAt DateTime @default(now())
+  createdBy String
+  student Student @relation(fields: [schoolId, studentId], references: [schoolId, id], onDelete: Restrict)
+  academicYear AcademicYear @relation(fields: [schoolId, academicYearId], references: [schoolId, id], onDelete: Restrict)
+  schoolClass SchoolClass @relation(fields: [schoolId, classId], references: [schoolId, id], onDelete: Restrict)
+  feePlan FeePlan @relation(fields: [schoolId, feePlanId], references: [schoolId, id], onDelete: Restrict)
+  charges StudentCharge[]
+  @@unique([schoolId, studentId, academicYearId])
+  @@unique([schoolId, id])
+}
+
+model StudentCharge {
+  id String @id @default(cuid())
+  schoolId String
+  enrollmentId String
+  planItemId String
+  label String
+  amountCents Int
+  dueOn DateTime @db.Date
+  createdAt DateTime @default(now())
+  enrollment Enrollment @relation(fields: [schoolId, enrollmentId], references: [schoolId, id], onDelete: Restrict)
+  planItem FeePlanItem @relation(fields: [schoolId, planItemId], references: [schoolId, id], onDelete: Restrict)
+  allocations PaymentAllocation[]
+  credits DiscountAllocation[]
+  @@unique([schoolId, enrollmentId, planItemId])
+  @@unique([schoolId, id])
+  @@index([schoolId, dueOn])
+}
+
+model Payment {
+  id String @id @default(cuid())
+  schoolId String
+  studentId String
+  amountCents Int
+  paidOn DateTime @db.Date
+  mode String
+  reference String?
+  receiptNumber String
+  requestKey String
+  requestHash String
+  recordedBy String
+  recordedByName String
+  studentName String
+  studentAdmissionNumber String
+  schoolName String
+  createdAt DateTime @default(now())
+  reversedAt DateTime?
+  reversedBy String?
+  reversalReason String?
+  student Student @relation(fields: [schoolId, studentId], references: [schoolId, id], onDelete: Restrict)
+  allocations PaymentAllocation[]
+  @@unique([schoolId, requestKey])
+  @@unique([schoolId, receiptNumber])
+  @@unique([schoolId, id])
+  @@index([schoolId, paidOn])
+}
+
+model PaymentAllocation {
+  id String @id @default(cuid())
+  schoolId String
+  paymentId String
+  chargeId String
+  amountCents Int
+  payment Payment @relation(fields: [schoolId, paymentId], references: [schoolId, id], onDelete: Restrict)
+  charge StudentCharge @relation(fields: [schoolId, chargeId], references: [schoolId, id], onDelete: Restrict)
+  @@unique([schoolId, paymentId, chargeId])
+}
+
+model Discount {
+  id String @id @default(cuid())
+  schoolId String
+  studentId String
+  amountCents Int
+  reason String
+  requestKey String
+  requestHash String
+  recordedBy String
+  recordedByName String
+  createdAt DateTime @default(now())
+  student Student @relation(fields: [schoolId, studentId], references: [schoolId, id], onDelete: Restrict)
+  allocations DiscountAllocation[]
+  @@unique([schoolId, requestKey])
+  @@unique([schoolId, id])
+}
+
+model DiscountAllocation {
+  id String @id @default(cuid())
+  schoolId String
+  discountId String
+  chargeId String
+  amountCents Int
+  discount Discount @relation(fields: [schoolId, discountId], references: [schoolId, id], onDelete: Restrict)
+  charge StudentCharge @relation(fields: [schoolId, chargeId], references: [schoolId, id], onDelete: Restrict)
+  @@unique([schoolId, discountId, chargeId])
+}
+
+model AuditEvent {
+  id String @id @default(cuid())
+  schoolId String
+  actorId String
+  actorName String
+  action String
+  entityId String
+  details Json
+  createdAt DateTime @default(now())
+  school School @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  @@index([schoolId, createdAt])
 }
 
