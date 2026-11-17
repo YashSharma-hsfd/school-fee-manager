@@ -9,7 +9,7 @@ export async function readSession() {
   const token = (await cookies()).get(sessionCookie)?.value;
   return resolveSession(token, tokenHash => prisma.session.findUnique({
     where: { tokenHash },
-    select: { expiresAt: true, user: { select: { id: true, name: true, role: true, active: true } } },
+    select: { expiresAt: true, user: { select: { id: true, name: true, role: true, isPlatformAdmin: true, isActive: true } } },
   }));
 }
 

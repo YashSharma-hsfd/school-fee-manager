@@ -8,10 +8,10 @@ export const moneySchema = z.string().trim().regex(/^(0|[1-9]\d{0,7})(\.\d{1,2})
     return Number(whole) * 100 + Number(fraction.padEnd(2, "0"));
   }).refine(value => value > 0 && value <= 1_000_000_000, "Amount must be greater than zero and no more than 10,000,000");
 
-export function displayMoney(cents: number) {
-  if (!Number.isSafeInteger(cents)) throw new FeeRuleError("Invalid monetary amount");
-  const sign = cents < 0 ? "-" : "";
-  const absolute = Math.abs(cents);
+export function displayMoney(paise: number) {
+  if (!Number.isSafeInteger(paise)) throw new FeeRuleError("Invalid monetary amount");
+  const sign = paise < 0 ? "-" : "";
+  const absolute = Math.abs(paise);
   return `${sign}${Math.floor(absolute / 100).toLocaleString("en-IN")}.${String(absolute % 100).padStart(2, "0")}`;
 }
 
@@ -26,21 +26,21 @@ export function installments(total: number, count: number, firstDue: Date, endsO
     const dueOn = new Date(firstDue);
     dueOn.setUTCMonth(dueOn.getUTCMonth() + index * step);
     if (dueOn > endsOn) throw new FeeRuleError("The installment schedule extends beyond the academic year");
-    return { installment: index + 1, dueOn, amountCents: Math.floor(total / count) + (index < total % count ? 1 : 0) };
+    return { installment: index + 1, dueOn, amountPaise: Math.floor(total / count) + (index < total % count ? 1 : 0) };
   });
 }
 
-export type OpenCharge = { id: string; amountCents: number; settledCents: number; dueOn: Date };
+export type OpenCharge = { id: string; amountPaise: number; settledPaise: number; dueOn: Date };
 
 export function allocateOldest(amount: number, charges: OpenCharge[]) {
   if (!Number.isSafeInteger(amount) || amount <= 0) throw new FeeRuleError("Enter a positive amount");
   let remaining = amount;
-  const result: { chargeId: string; amountCents: number }[] = [];
+  const result: { chargeId: string; amountPaise: number }[] = [];
   for (const charge of [...charges].sort((a, b) => a.dueOn.getTime() - b.dueOn.getTime() || a.id.localeCompare(b.id))) {
-    const available = charge.amountCents - charge.settledCents;
+    const available = charge.amountPaise - charge.settledPaise;
     if (available < 0) throw new FeeRuleError("A charge has inconsistent allocations");
     const allocated = Math.min(remaining, available);
-    if (allocated > 0) result.push({ chargeId: charge.id, amountCents: allocated });
+    if (allocated > 0) result.push({ chargeId: charge.id, amountPaise: allocated });
     remaining -= allocated;
     if (!remaining) break;
   }
@@ -52,7 +52,7 @@ export function balances(charges: OpenCharge[], asOf: Date) {
   const cutoff = dateOnly(asOf);
   let outstanding = 0, overdue = 0;
   for (const charge of charges) {
-    const balance = charge.amountCents - charge.settledCents;
+    const balance = charge.amountPaise - charge.settledPaise;
     if (balance < 0) throw new FeeRuleError("A charge has inconsistent allocations");
     outstanding += balance;
     // Due today remains current until that date has passed.

@@ -18,7 +18,7 @@ if (!parsed.success) {
     const passwordHash = await hashPassword(parsed.data.password);
     await prisma.$transaction(async tx => {
       const user = await tx.user.findUnique({ where: { email: parsed.data.email }, include: { memberships: true } });
-      if (!user?.active) throw new Error("Active account not found");
+      if (!user?.isActive) throw new Error("Active account not found");
       await tx.user.update({ where: { id: user.id }, data: { passwordHash } });
       await tx.session.deleteMany({ where: { userId: user.id } });
       await tx.loginAttempt.deleteMany({ where: { email: user.email } });

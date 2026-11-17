@@ -1,6 +1,6 @@
 @import "tailwindcss";
 :root { --background: #f8fafc; --foreground: #0f172a; }
-body { background: var(--background); color: var(--foreground); font-family: Arial, Helvetica, sans-serif; }
+body { background: var(--background); color: var(--foreground); font-family: "Segoe UI", ui-sans-serif, system-ui, sans-serif; line-height: 1.5; -webkit-font-smoothing: antialiased; }
 
 @layer base {
   button:not(:disabled), summary, select { cursor: pointer; }
@@ -13,8 +13,28 @@ body { background: var(--background); color: var(--foreground); font-family: Ari
     border-radius: 6px; background: #eef2ff; color: #3730a3; font-weight: 600; cursor: pointer;
   }
   input[type="file"]::file-selector-button:hover { background: #e0e7ff; }
-  summary { color: #4338ca; text-decoration: underline; text-underline-offset: 3px; }
-  nav a, nav button { border-radius: 6px; padding: 6px 10px; }
-  nav a:hover, nav button:hover { background: #eef2ff; color: #3730a3; }
+  summary { color: #4338ca; font-weight: 600; }
+  summary:hover { color: #312e81; }
+  h1, h2 { letter-spacing: -0.025em; }
+  :where(section[id], h2[id], div[id]) { scroll-margin-top: 11rem; }
+  thead th { white-space: nowrap; font-weight: 600; color: #475569; }
+  tbody tr { transition: background-color 120ms ease; }
+  tbody tr:hover { background-color: #f8fafc; }
+  td { vertical-align: top; }
+  input[type="checkbox"] { width: 1.1rem; height: 1.1rem; accent-color: #4338ca; }
+  :where(input, select):disabled { background-color: #f8fafc; }
+  nav [aria-current="page"] { text-decoration: none; }
+  @media (max-width: 640px) {
+    main { padding-left: 1rem; padding-right: 1rem; }
+    input:not([type="hidden"]), select { font-size: 16px; }
+  }
+  @media print {
+    body { background: white; font-size: 11pt; }
+    main { max-width: none; padding: 0; }
+    a { color: inherit; text-decoration: none; }
+    article { box-shadow: none; }
+    table { break-inside: auto; }
+    tr { break-inside: avoid; }
+  }
 }
 

@@ -17,10 +17,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ scho
   let rows: (string | number | bigint)[][];
   if (kind.data === "collections") {
     const payments = await prisma.payment.findMany({ where: paymentWhere(schoolId, parsed.data), orderBy: [{ paidOn: "asc" }, { id: "asc" }] });
-    rows = [["Receipt", "Date", "Admission number", "Student", "Mode", "Reference", "Amount", "Recorded by"], ...payments.map(p => [p.receiptNumber, p.paidOn.toISOString().slice(0, 10), p.studentAdmissionNumber, p.studentName, p.mode, p.reference || "", decimalMoney(p.amountCents), p.recordedByName])];
+    rows = [["Receipt", "Date", "Admission number", "Student", "Mode", "Reference", "Amount", "Recorded by"], ...payments.map(p => [p.receiptNumber, p.paidOn.toISOString().slice(0, 10), p.studentAdmissionNumber, p.studentName, p.mode, p.reference || "", decimalMoney(p.amountPaise), p.recordedByName])];
   } else if (kind.data === "transactions") {
     const events = await transactionReport(schoolId, parsed.data);
-    rows = [["Event date", "Event type", "Record ID", "Admission number", "Student", "Class (current)", "Student status (current)", "Mode", "Amount", "Cash collected change", "Discount change", "Record state (current)", "Receipt", "Reference / reason", "Actor name or ID", "Recorded at (UTC)"], ...events.map(e => [e.eventOn, e.kind, e.recordId, e.admissionNumber, e.name, e.className, e.lifecycle, e.mode, decimalMoney(e.amountCents), decimalMoney(e.cashCents), decimalMoney(e.discountCents), e.state, e.receipt, e.reason, e.actor, e.recordedAt.toISOString()])];
+    rows = [["Event date", "Event type", "Record ID", "Admission number", "Student", "Class (current)", "Student status (current)", "Mode", "Amount", "Cash collected change", "Discount change", "Record state (current)", "Receipt", "Reference / reason", "Actor name or ID", "Recorded at (UTC)"], ...events.map(e => [e.eventOn, e.kind, e.recordId, e.admissionNumber, e.name, e.className, e.lifecycle, e.mode, decimalMoney(e.amountPaise), decimalMoney(e.cashPaise), decimalMoney(e.discountPaise), e.state, e.receipt, e.reason, e.actor, e.recordedAt.toISOString()])];
   } else {
     const filter = balanceSqlFilter(kind.data === "overdue" ? "overdue" : status.data);
     const students = await prisma.$queryRaw<{ name: string; admissionNumber: string; className: string; remaining: bigint; overdue: bigint }[]>(Prisma.sql`${reportCte(schoolId, schoolToday(), parsed.data)} SELECT * FROM student_balances ${filter} ORDER BY name, id`);

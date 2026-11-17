@@ -6,8 +6,10 @@ const account = z.object({
   email: z.string().trim().toLowerCase().email().max(254),
   name: z.string().trim().min(1).max(120),
   role: z.enum(["ADMIN", "ACCOUNTANT", "MANAGEMENT"]),
+  isPlatformAdmin: z.boolean(),
   password: z.string().min(12).max(256),
 }).safeParse({
+  isPlatformAdmin: process.env.STAFF_PLATFORM_ADMIN === "true",
   email: process.env.STAFF_EMAIL,
   name: process.env.STAFF_NAME,
   role: process.env.STAFF_ROLE,

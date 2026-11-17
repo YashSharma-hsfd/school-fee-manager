@@ -21,18 +21,18 @@ describe("staff account security", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     verify.mockResolvedValue(true);
-    tx.schoolMembership.findUnique.mockResolvedValue({ role: "ADMIN", manageAccess: true });
+    tx.schoolMembership.findUnique.mockResolvedValue({ role: "ADMIN", canManageAccess: true });
     tx.user.findUnique.mockImplementation(async ({ where }) => where.id === actor.id
-      ? { id: actor.id, active: true, role: "ADMIN", passwordHash: "existing-hash" }
-      : where.id === "staff" ? { id: "staff", email: create.email, role: "ACCOUNTANT", active: true, memberships: [{ schoolId: "school" }] } : null);
+      ? { id: actor.id, isActive: true, role: "ADMIN", passwordHash: "existing-hash" }
+      : where.id === "staff" ? { id: "staff", email: create.email, role: "ACCOUNTANT", isActive: true, memberships: [{ schoolId: "school" }] } : null);
     tx.schoolMembership.findMany.mockResolvedValue([{ schoolId: "school" }]);
     tx.user.create.mockResolvedValue({ id: "staff" });
   });
   it("requires both school access management and a current global administrator", async () => {
-    tx.schoolMembership.findUnique.mockResolvedValue({ role: "ADMIN", manageAccess: false });
+    tx.schoolMembership.findUnique.mockResolvedValue({ role: "ADMIN", canManageAccess: false });
     await expect(createStaff(actor, "school", create)).rejects.toThrow("permission");
-    tx.schoolMembership.findUnique.mockResolvedValue({ role: "ACCOUNTANT", manageAccess: true });
-    tx.user.findUnique.mockResolvedValue({ active: true, role: "ACCOUNTANT" });
+    tx.schoolMembership.findUnique.mockResolvedValue({ role: "ACCOUNTANT", canManageAccess: true });
+    tx.user.findUnique.mockResolvedValue({ isActive: true, role: "ACCOUNTANT" });
     await expect(createStaff(actor, "school", create)).rejects.toThrow("permission");
     expect(tx.user.create).not.toHaveBeenCalled();
   });
@@ -40,7 +40,7 @@ describe("staff account security", () => {
     verify.mockResolvedValue(false);
     await expect(createStaff(actor, "school", create)).rejects.toThrow("current password");
     verify.mockResolvedValue(true);
-    tx.user.findUnique.mockResolvedValue({ id: actor.id, active: true, role: "ADMIN", passwordHash: "existing-hash" });
+    tx.user.findUnique.mockResolvedValue({ id: actor.id, isActive: true, role: "ADMIN", passwordHash: "existing-hash" });
     await expect(createStaff(actor, "school", create)).rejects.toThrow("already exists");
     expect(tx.user.create).not.toHaveBeenCalled();
   });
@@ -57,9 +57,9 @@ describe("staff account security", () => {
     expect(tx.session.deleteMany).not.toHaveBeenCalled();
   });
   it("blocks recovery of global administrators and accounts outside this school", async () => {
-    tx.user.findUnique.mockImplementation(async ({ where }) => where.id === actor.id ? { active: true, role: "ADMIN", passwordHash: "old" } : { id: "staff", active: true, role: "ADMIN", memberships: [{ schoolId: "school" }] });
+    tx.user.findUnique.mockImplementation(async ({ where }) => where.id === actor.id ? { isActive: true, role: "ADMIN", passwordHash: "old" } : { id: "staff", isActive: true, role: "ADMIN", memberships: [{ schoolId: "school" }] });
     await expect(recoverStaffPassword(actor, "school", recovery)).rejects.toThrow("non-administrator");
-    tx.user.findUnique.mockImplementation(async ({ where }) => where.id === actor.id ? { active: true, role: "ADMIN", passwordHash: "old" } : { id: "staff", active: true, role: "ACCOUNTANT", memberships: [{ schoolId: "other" }] });
+    tx.user.findUnique.mockImplementation(async ({ where }) => where.id === actor.id ? { isActive: true, role: "ADMIN", passwordHash: "old" } : { id: "staff", isActive: true, role: "ACCOUNTANT", memberships: [{ schoolId: "other" }] });
     await expect(recoverStaffPassword(actor, "school", recovery)).rejects.toThrow("in this school");
     expect(tx.user.update).not.toHaveBeenCalled();
   });

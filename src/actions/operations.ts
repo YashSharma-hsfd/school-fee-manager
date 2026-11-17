@@ -6,7 +6,8 @@ import { schoolAccess } from "@/lib/school";
 import { prisma } from "@/lib/prisma";
 import { FeeRuleError } from "@/services/fee-calculations";
 import { SchoolAccessError } from "@/services/school-permissions";
-import { importStudents, validateImport } from "@/services/student-import";
+import { importStudents, validateImport, validateImportPlacement } from "@/services/student-import";
+import { bulkEnroll, assignStudentFees } from "@/services/bulk-enrollment";
 import { correctCharge, reverseDiscount } from "@/services/fees";
 import type { SchoolFormState } from "./schools";
 import { bulkPromote } from "@/services/bulk-promotion";
@@ -32,9 +33,8 @@ export async function previewStudentImport(schoolId: string, text: string) {
   await schoolAccess(schoolId, "students");
   try {
     const rows = validateImport(z.string().max(512_000).parse(text));
-    const existing = await prisma.student.findFirst({ where: { schoolId, admissionNumber: { in: rows.map(row => row.admissionNumber) } } });
-    if (existing) throw new FeeRuleError(`Admission number ${existing.admissionNumber} already exists`);
-    return { error: "", rows: rows.map(({ admissionNumber, name, className, guardianName, guardianPhone, openingDue, dueOn }) => ({ admissionNumber, name, className, guardianName, guardianPhone, openingDue, dueOn })) };
+    await validateImportPlacement(prisma, schoolId, rows);
+    return { error: "", rows: rows.map(({ admissionNumber, name, dateOfBirth, admissionDate, academicYear, className, sectionName, rollNumber, enrollmentDate, guardianName, guardianPhone, openingDue, dueOn }) => ({ admissionNumber, name, dateOfBirth, admissionDate, academicYear, className, sectionName, rollNumber, enrollmentDate, guardianName, guardianPhone, openingDue, dueOn })) };
   } catch (error) { return { error: message(error), rows: [] }; }
 }
 export async function confirmStudentImport(schoolId: string, text: string) {
@@ -42,7 +42,7 @@ export async function confirmStudentImport(schoolId: string, text: string) {
   try {
     const count = await importStudents(user, schoolId, z.string().max(512_000).parse(text));
     revalidatePath(`/schools/${schoolId}`, "layout"); revalidatePath("/admin/students");
-    return { error: "", success: `Imported ${count} students. Opening dues saved; new-year fees were not assigned.` };
+    return { error: "", success: `Imported ${count} students. Opening dues saved. Enrollment fees are assigned only for explicitly provided academic years and classes.` };
   } catch (error) { return { error: message(error), success: "" }; }
 }
 
@@ -65,11 +65,30 @@ export async function reverseStudentDiscount(schoolId: string, discountId: strin
 }
 
 export async function promoteStudents(schoolId: string, _state: SchoolFormState, formData: FormData): Promise<SchoolFormState> {
-  const { user } = await schoolAccess(schoolId, "students");
+  const { user } = await schoolAccess(schoolId, "enroll");
   try {
     const count = await bulkPromote(user, schoolId, { ...Object.fromEntries(formData), studentIds: formData.getAll("studentIds") });
     revalidatePath(`/schools/${schoolId}`, "layout"); revalidatePath("/admin/students");
     return { error: "", success: `Saved ${count} promotions. Earlier records and dues are preserved.` };
+  } catch (error) { return { error: message(error), success: "" }; }
+}
+
+export async function enrollStudents(schoolId: string, _state: SchoolFormState, formData: FormData): Promise<SchoolFormState> {
+  const { user } = await schoolAccess(schoolId, "enroll");
+  try {
+    const studentIds = z.array(z.string().min(1).max(128)).min(1).max(100).parse(formData.getAll("studentIds"));
+    const count = await bulkEnroll(user, schoolId, { ...Object.fromEntries(formData), students: studentIds.map(studentId => ({ studentId, rollNumber: formData.get(`roll:${studentId}`) ?? "" })) });
+    revalidatePath(`/schools/${schoolId}`, "layout"); revalidatePath("/admin/students");
+    return { error: "", success: `Saved ${count} enrollments. Available full-year fees assigned; existing records and dues preserved.` };
+  } catch (error) { return { error: message(error), success: "" }; }
+}
+
+export async function assignFees(schoolId: string, _state: SchoolFormState, formData: FormData): Promise<SchoolFormState> {
+  const { user } = await schoolAccess(schoolId, "assignFees");
+  try {
+    const result = await assignStudentFees(user, schoolId, { enrollmentIds: formData.getAll("enrollmentIds") });
+    revalidatePath(`/schools/${schoolId}`, "layout");
+    return { error: "", success: `Assigned full-year fees to ${result.assigned} enrollment(s). ${result.unchanged} already assigned and preserved.` };
   } catch (error) { return { error: message(error), success: "" }; }
 }
 

@@ -3,7 +3,7 @@ import { hashPassword, verifyPassword } from "../../src/lib/passwords";
 import { authenticate, resolveSession, sessionLifetime, staffHome, tokenHash } from "../../src/services/auth";
 
 const now = new Date("2026-11-13T12:00:00Z");
-const user = { id: "synthetic-user", name: "Example Staff", role: "ADMIN" as const, active: true };
+const user = { id: "synthetic-user", name: "Example Staff", role: "ADMIN" as const, isActive: true };
 const credentials = { email: " staff@example.test ", password: "Synthetic password 123" };
 
 describe("staff credentials", () => {
@@ -39,7 +39,7 @@ describe("staff credentials", () => {
   it.each(["unknown", "inactive", "incorrect"])("rejects %s credentials without issuing a session", async scenario => {
     const dependencies = {
       consumeAttempt: vi.fn().mockResolvedValue(true),
-      findUser: vi.fn().mockResolvedValue(scenario === "unknown" ? null : { ...user, active: scenario !== "inactive", passwordHash: await hashPassword(scenario === "incorrect" ? "Other password" : credentials.password) }),
+      findUser: vi.fn().mockResolvedValue(scenario === "unknown" ? null : { ...user, isActive: scenario !== "inactive", passwordHash: await hashPassword(scenario === "incorrect" ? "Other password" : credentials.password) }),
       saveSession: vi.fn(),
     };
     expect(await authenticate(credentials, dependencies)).toBeNull();
@@ -56,7 +56,7 @@ describe("session authorization", () => {
     expect(find).not.toHaveBeenCalled();
   });
   it("rejects missing, expired, and disabled sessions", async () => {
-    for (const session of [null, { expiresAt: now, user }, { expiresAt: new Date(now.getTime() + 1000), user: { ...user, active: false } }]) {
+    for (const session of [null, { expiresAt: now, user }, { expiresAt: new Date(now.getTime() + 1000), user: { ...user, isActive: false } }]) {
       expect(await resolveSession(token, async () => session, now)).toBeNull();
     }
   });

@@ -17,7 +17,7 @@ describe("server role guards", () => {
   });
   it.each(["ADMIN", "ACCOUNTANT"] as const)("permits the matching %s role", async role => {
     mocks.get.mockReturnValue({ value: "a".repeat(64) });
-    mocks.findUnique.mockResolvedValue({ expiresAt: new Date(Date.now() + 60_000), user: { id: "synthetic", name: "Example", role, active: true } });
+    mocks.findUnique.mockResolvedValue({ expiresAt: new Date(Date.now() + 60_000), user: { id: "synthetic", name: "Example", role, isActive: true } });
     await expect(requireRole(role)).resolves.toEqual({ id: "synthetic", name: "Example", role });
   });
   it.each([
@@ -25,7 +25,7 @@ describe("server role guards", () => {
     ["ADMIN", "ACCOUNTANT", "/admin/dashboard"],
   ] as const)("redirects %s away from %s pages", async (role, requested, home) => {
     mocks.get.mockReturnValue({ value: "a".repeat(64) });
-    mocks.findUnique.mockResolvedValue({ expiresAt: new Date(Date.now() + 60_000), user: { id: "synthetic", name: "Example", role, active: true } });
+    mocks.findUnique.mockResolvedValue({ expiresAt: new Date(Date.now() + 60_000), user: { id: "synthetic", name: "Example", role, isActive: true } });
     await expect(requireRole(requested)).rejects.toThrow(`redirect:${home}`);
   });
 });

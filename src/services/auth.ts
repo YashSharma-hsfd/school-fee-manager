@@ -7,14 +7,14 @@ export const loginSchema = z.object({
   password: z.string().min(1).max(256),
 });
 export type StaffRole = "ADMIN" | "ACCOUNTANT" | "MANAGEMENT";
-export type SessionUser = { id: string; name: string; role: StaffRole };
+export type SessionUser = { id: string; name: string; role: StaffRole; isPlatformAdmin?: boolean };
 export const sessionLifetime = 8 * 60 * 60 * 1000;
 export const tokenHash = (token: string) => createHash("sha256").update(token).digest("hex");
 const dummyHash = `scrypt:${"0".repeat(32)}:${"0".repeat(128)}`;
 
 type LoginDependencies = {
   consumeAttempt(email: string, now: Date): Promise<boolean>;
-  findUser(email: string): Promise<(SessionUser & { active: boolean; passwordHash: string }) | null>;
+  findUser(email: string): Promise<(SessionUser & { isActive: boolean; passwordHash: string }) | null>;
   saveSession(data: { tokenHash: string; userId: string; expiresAt: Date }): Promise<unknown>;
 };
 
@@ -25,7 +25,7 @@ export async function authenticate(input: unknown, dependencies: LoginDependenci
   if (!await dependencies.consumeAttempt(email, now)) return null;
   const user = await dependencies.findUser(email);
   const valid = await verifyPassword(password, user?.passwordHash ?? dummyHash);
-  if (!valid || !user?.active || !["ADMIN", "ACCOUNTANT", "MANAGEMENT"].includes(user.role)) return null;
+  if (!valid || !user?.isActive || !["ADMIN", "ACCOUNTANT", "MANAGEMENT"].includes(user.role)) return null;
   const token = randomBytes(32).toString("hex");
   const expiresAt = new Date(now.getTime() + sessionLifetime);
   await dependencies.saveSession({ tokenHash: tokenHash(token), userId: user.id, expiresAt });
@@ -34,15 +34,15 @@ export async function authenticate(input: unknown, dependencies: LoginDependenci
 
 export async function resolveSession(
   token: string | undefined,
-  find: (hash: string) => Promise<{ expiresAt: Date; user: SessionUser & { active: boolean } } | null>,
+  find: (hash: string) => Promise<{ expiresAt: Date; user: SessionUser & { isActive: boolean } } | null>,
   now = new Date(),
 ): Promise<SessionUser | null> {
   if (!token || !/^[a-f0-9]{64}$/.test(token)) return null;
   const session = await find(tokenHash(token));
-  if (!session || session.expiresAt <= now || !session.user.active) return null;
-  const { id, name, role } = session.user;
+  if (!session || session.expiresAt <= now || !session.user.isActive) return null;
+  const { id, name, role, isPlatformAdmin } = session.user;
   if (role !== "ADMIN" && role !== "ACCOUNTANT" && role !== "MANAGEMENT") return null;
-  return { id, name, role };
+  return { id, name, role, ...(isPlatformAdmin ? { isPlatformAdmin: true } : {}) };
 }
 
 export function staffHome(role: StaffRole) {

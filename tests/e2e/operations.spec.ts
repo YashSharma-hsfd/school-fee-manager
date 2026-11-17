@@ -16,7 +16,7 @@ test.describe("school operations browser flows", () => {
   test.beforeAll(async () => {
     const passwordHash = await hashPassword(password);
     await prisma.user.createMany({ data: users.map(user => ({ ...user, passwordHash })) });
-    schoolId = (await prisma.school.create({ data: { name: "Synthetic Operations UI", code: `UI${suffix}`.toUpperCase(), memberships: { create: users.map(user => ({ userId: user.id, role: user.role, configureFees: user.role === "ADMIN", manageAccess: user.role === "ADMIN" })) } } })).id;
+    schoolId = (await prisma.school.create({ data: { name: "Synthetic Operations UI", code: `UI${suffix}`.toUpperCase(), memberships: { create: users.map(user => ({ userId: user.id, role: user.role, canConfigureFees: user.role === "ADMIN", canManageAccess: user.role === "ADMIN" })) } } })).id;
     otherSchoolId = (await prisma.school.create({ data: { name: "Other Operations UI", code: `UJ${suffix}`.toUpperCase() } })).id;
     yearId = (await createYear(users[0], schoolId, { name: "2020-21", startsOn: "2020-04-01", endsOn: "2021-03-31" })).id;
     nextYearId = (await createYear(users[0], schoolId, { name: "2021-22", startsOn: "2021-04-01", endsOn: "2022-03-31" })).id;
@@ -48,7 +48,7 @@ test.describe("school operations browser flows", () => {
   }
   async function student() {
     const admissionNumber = randomUUID().toUpperCase();
-    await importStudents(users[0], schoolId, importHeaders.join(",") + `\n${admissionNumber},Synthetic Flow Student,5A,Synthetic Guardian,+49123456789,0,`);
+    await importStudents(users[0], schoolId, importHeaders.join(",") + `\n${admissionNumber},Synthetic Flow Student,2010-05-10,,,,Synthetic Guardian,+49123456789,0,`);
     const s = await prisma.student.findUniqueOrThrow({ where: { schoolId_admissionNumber: { schoolId, admissionNumber } } });
     await enrollStudent(users[0], schoolId, { studentId: s.id, academicYearId: yearId, classId });
     return s;
@@ -58,7 +58,7 @@ test.describe("school operations browser flows", () => {
     await login(page);
     await page.goto(`/schools/${schoolId}/operations`);
     const admissionNumber = `UI-${suffix}`.toUpperCase();
-    const text = importHeaders.join(",") + `\n${admissionNumber},Synthetic Imported Student,5A,Synthetic Guardian,+49123456789,123.45,2020-03-01`;
+    const text = importHeaders.join(",") + `\n${admissionNumber},Synthetic Imported Student,2010-05-10,,,,Synthetic Guardian,+49123456789,123.45,2020-03-01`;
     await page.getByLabel("Student CSV").setInputFiles({ name: "students.csv", mimeType: "text/csv", buffer: Buffer.from(text) });
     await page.getByRole("button", { name: "Preview import", exact: true }).click();
     await expect(page.getByText("1 students ready. No records have been written.", { exact: true })).toBeVisible();
@@ -104,9 +104,9 @@ test.describe("school operations browser flows", () => {
     expect((await page.request.get(`/schools/${otherSchoolId}/reports/export?kind=collections`)).status()).toBe(404);
     expect((await page.request.get(`/schools/${schoolId}/reports/export?kind=collections&from=2020-07-01&to=2020-06-01`)).status()).toBe(400);
     await page.getByLabel("Name, admission or guardian", { exact: true }).fill(s.admissionNumber);
-    await page.getByLabel("Class", { exact: true }).selectOption("5A");
-    await page.getByLabel("Student lifecycle", { exact: true }).selectOption("ACTIVE");
-    await page.getByLabel("Payment mode", { exact: true }).selectOption("BANK_TRANSFER");
+    await page.locator('select[name="className"]').selectOption("5A");
+    await page.locator('select[name="lifecycle"]').selectOption("ACTIVE");
+    await page.locator('select[name="mode"]').selectOption("BANK_TRANSFER");
     await page.getByRole("button", { name: "Apply filters", exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`q=${s.admissionNumber}`));
     const balances=page.locator("section").filter({has:page.getByRole("heading",{name:"Current student balances",exact:true})});
@@ -114,8 +114,8 @@ test.describe("school operations browser flows", () => {
     await expect(page.getByRole("link",{name:"Download all matching transactions CSV",exact:true})).toHaveAttribute("href",new RegExp(`q=${s.admissionNumber}`));
     await page.getByRole("link",{name:"Clear filters",exact:true}).click();
     await expect(page.getByLabel("Name, admission or guardian",{exact:true})).toHaveValue("");
-    await expect(page.getByLabel("Class",{exact:true})).toHaveValue("");
-    await expect(page.getByLabel("Payment mode",{exact:true})).toHaveValue("ALL");
+    await expect(page.locator('select[name="className"]')).toHaveValue("");
+    await expect(page.locator('select[name="mode"]')).toHaveValue("ALL");
   });
 
   test("promotes selected students and preserves previous dues", async ({ page }) => {
@@ -128,8 +128,8 @@ test.describe("school operations browser flows", () => {
     await expect(page.getByRole("status")).toContainText("Saved 1 promotions");
     await page.goto(`/schools/${schoolId}/students/${s.id}`);
     await expect(page.getByRole("article").filter({ hasText: "Total outstanding" })).toContainText("2,000.00");
-    await expect(page.getByText("2020-21", { exact: false }).first()).toBeVisible();
-    await expect(page.getByText("2021-22", { exact: false }).first()).toBeVisible();
+    await expect(page.locator("#academic-history").getByText("2020-21", { exact: false })).toBeVisible();
+    await expect(page.locator("#academic-history").getByText("2021-22", { exact: false })).toBeVisible();
   });
 
   test("creates staff, recovers a password and lets staff change their own password", async ({ page }) => {
@@ -215,10 +215,87 @@ test.describe("school operations browser flows", () => {
       await page.getByRole("link",{name:"View account",exact:true}).click();
       await expect(page.getByRole("heading",{name:s.name,exact:true})).toBeVisible();
       await expect(page.getByRole("link",{name:"Collect payment",exact:true})).toHaveCount(index===1?1:0);
-      await expect(page.getByRole("link",{name:"Enroll / promote",exact:true})).toHaveCount(index===0?1:0);
-      await expect(navigation.getByRole("button",{name:"Student records",exact:true})).toHaveCount(index===0?1:0);
+      await expect(page.getByRole("link",{name:"Enroll / promote",exact:true})).toHaveCount(index!==1?1:0);
+      await expect(navigation.getByRole("button",{name:"Add student",exact:true})).toHaveCount(index===0?1:0);
       await navigation.getByRole("link",{name:"Reports & audit",exact:true}).click();
       await expect(navigation.getByRole("link",{name:"Reports & audit",exact:true})).toHaveAttribute("aria-current","page");
     }
+  });
+  test("management bulk enrolls new records with individual rolls while import and configuration remain restricted", async ({ page }) => {
+    const prefix = `BULK-${randomUUID().slice(0, 12)}`.toUpperCase();
+    const admissions = [`${prefix}-A`, `${prefix}-B`];
+    await importStudents(users[0], schoolId, importHeaders.join(",") + "\n" + admissions.map((admission, index) => `${admission},Synthetic${index ? "Beta" : "Alpha"},2010-05-10,,,,Guardian,+49123456789,0,`).join("\n"));
+    await login(page, users[2].email);
+    await page.goto(`/schools/${schoolId}/operations`);
+    await expect(page.getByLabel("Student CSV")).toHaveCount(0);
+    await expect(page.getByRole("navigation", { name: "School navigation", exact: true }).getByRole("link", { name: "Configuration", exact: true })).toHaveCount(0);
+    const batch = page.locator("#bulk-enrollment");
+    await batch.getByLabel("Academic year", { exact: true }).selectOption(nextYearId);
+    await batch.getByLabel("Class", { exact: true }).selectOption(nextClassId);
+    await batch.getByLabel("Student name or admission number", { exact: true }).fill(prefix);
+    await batch.getByRole("button", { name: "Preview enrollment and fees", exact: true }).click();
+    await batch.getByLabel("Select all shown", { exact: true }).check();
+    await batch.getByLabel("Roll number for SyntheticAlpha", { exact: true }).fill(`A-${suffix}`);
+    await batch.getByLabel("Roll number for SyntheticBeta", { exact: true }).fill(`B-${suffix}`);
+    await batch.locator('input[name="startsOn"]').fill("2021-11-01");
+    await batch.getByRole("button", { name: "Enroll selected students", exact: true }).click();
+    await expect(batch.getByRole("status")).toContainText("Saved 2 enrollments");
+    const records = await prisma.enrollment.findMany({ where: { schoolId, academicYearId: nextYearId, student: { admissionNumber: { in: admissions } } }, include: { charges: true } });
+    expect(records).toHaveLength(2);
+    expect(records.map(record => record.rollNumber).sort()).toEqual([`A-${suffix}`, `B-${suffix}`]);
+    expect(records.every(record => record.charges.reduce((sum, charge) => sum + charge.amountPaise, 0) === 100000)).toBe(true);
+    await page.goto(`/schools/${schoolId}/students/${records[0].studentId}`);
+    await expect(page.getByRole("link", { name: "Enroll / promote", exact: true })).toBeVisible();
+    await expect(page.getByText("Change student status", { exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Record payment & issue receipt", exact: true })).toHaveCount(0);
+  });
+
+  test("management assigns configured fees individually and in bulk without creating duplicate charges", async ({ page }) => {
+    const prefix = `FEES-${randomUUID().slice(0, 12)}`.toUpperCase();
+    const admissions = [`${prefix}-A`, `${prefix}-B`];
+    await importStudents(users[0], schoolId, importHeaders.join(",") + "\n" + admissions.map(admission => `${admission},Synthetic,2010-05-10,,,,Guardian,+49123456789,0,`).join("\n"));
+    const students = await prisma.student.findMany({ where: { schoolId, admissionNumber: { in: admissions } }, orderBy: { admissionNumber: "asc" } });
+    // Seed waiting enrollments directly so assignment controls can be tested independently of automatic enrollment assignment.
+    for (const student of students) await prisma.enrollment.create({ data: { schoolId, studentId: student.id, academicYearId: nextYearId, classId: nextClassId, startsOn: new Date("2021-11-01"), createdById: users[0].id } });
+    await login(page, users[2].email);
+    await page.goto(`/schools/${schoolId}/students/${students[0].id}`);
+    await page.getByRole("button", { name: "Assign fees: 2021-22 / 6A", exact: true }).click();
+    await expect(page.getByRole("article").filter({ hasText: "Total outstanding" })).toContainText("1,000.00");
+    await page.goto(`/schools/${schoolId}/operations?${new URLSearchParams({ batchYearId: nextYearId, batchClassId: nextClassId, batchSearch: prefix })}`);
+    const batch = page.locator("#bulk-enrollment");
+    await batch.getByLabel("Select all shown", { exact: true }).check();
+    await batch.getByRole("button", { name: "Assign fees to selected students", exact: true }).click();
+    await expect(batch.getByRole("status")).toContainText("Assigned full-year fees to 1 enrollment");
+    await page.reload();
+    await expect(batch.getByRole("button", { name: "Assign fees to selected students", exact: true })).toBeDisabled();
+    const records = await prisma.enrollment.findMany({ where: { schoolId, studentId: { in: students.map(student => student.id) } }, include: { charges: true } });
+    expect(records).toHaveLength(2);
+    expect(records.every(record => record.charges.length === 1 && record.charges[0].amountPaise === 100000)).toBe(true);
+  });
+
+  test("cancelling staff removal sends no action, confirming revokes only school access", async ({ page }) => {
+    const name = `SyntheticRevoke${suffix}`;
+    const staff = await prisma.user.create({ data: { name, email: `revoke-${suffix}@example.test`, role: "MANAGEMENT", passwordHash: await hashPassword(password), memberships: { create: { schoolId, role: "MANAGEMENT" } } } });
+    createdUsers.push(staff.id);
+    await login(page);
+    await page.goto(`/schools/${schoolId}/settings`);
+    const manage = page.locator("details").filter({ has: page.locator("summary").filter({ hasText: `Manage ${name}` }) });
+    await manage.locator("summary").click();
+    let posts = 0;
+    page.on("request", request => { if (request.method() === "POST") posts++; });
+    const cancelled = page.waitForEvent("dialog");
+    const firstClick = manage.getByRole("button", { name: "Remove school access", exact: true }).click();
+    const firstDialog = await cancelled;
+    expect(firstDialog.message()).toContain(name);
+    expect(firstDialog.message()).toContain("Synthetic Operations UI");
+    await firstDialog.dismiss(); await firstClick;
+    expect(posts).toBe(0);
+    expect((await prisma.schoolMembership.findUniqueOrThrow({ where: { schoolId_userId: { schoolId, userId: staff.id } } })).isActive).toBe(true);
+    const confirmed = page.waitForEvent("dialog");
+    const secondClick = manage.getByRole("button", { name: "Remove school access", exact: true }).click();
+    await (await confirmed).accept(); await secondClick;
+    await expect(manage.getByRole("status")).toContainText("School access removed");
+    expect((await prisma.schoolMembership.findUniqueOrThrow({ where: { schoolId_userId: { schoolId, userId: staff.id } } })).isActive).toBe(false);
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: staff.id } })).isActive).toBe(true);
   });
 });

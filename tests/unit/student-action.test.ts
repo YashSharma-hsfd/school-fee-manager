@@ -10,7 +10,7 @@ vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 import { addStudent, editStudent } from "../../src/actions/students";
 
 const initial = { error: "", success: "", fields: {} };
-const student = { id: "synthetic", schoolId: "school-a", name: "Example Student", admissionNumber: "TEST-001", className: "7A", guardianName: "Example Guardian", guardianPhone: "+49 123456789" };
+const student = { dateOfBirth: "2010-05-10", admissionDate: "", id: "synthetic", schoolId: "school-a", name: "Example Student", admissionNumber: "TEST-001", className: "7A", guardianName: "Example Guardian", guardianPhone: "+49 123456789" };
 function form() {
   const data = new FormData();
   Object.entries({ ...student, admissionNumber: "test-001", updatedAt: "2026-11-13T00:00:00.000Z" }).forEach(([key, value]) => data.set(key, value));
@@ -20,7 +20,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   mocks.session.mockResolvedValue({ id: "staff", name: "Example Admin", role: "ADMIN" });
   mocks.create.mockResolvedValue(student); mocks.findFirst.mockResolvedValue(student); mocks.findUniqueOrThrow.mockResolvedValue(student); mocks.enrollments.mockResolvedValue(0); mocks.plan.mockResolvedValue(null);
-  mocks.inSchool.mockImplementation(async (_actor, _school, _permission, work) => work({ student: { create: mocks.create, updateMany: mocks.updateMany, findFirst: mocks.findFirst, findUniqueOrThrow: mocks.findUniqueOrThrow }, enrollment: { count: mocks.enrollments }, feePlan: { findFirst: mocks.plan } }));
+  mocks.inSchool.mockImplementation(async (_actor, _school, _permission, work) => work({ studentStatusHistory: { create: vi.fn() }, studentGuardian: { findFirst: vi.fn(), create: vi.fn() }, guardian: { create: vi.fn().mockResolvedValue({ id: "guardian" }) }, student: { create: mocks.create, updateMany: mocks.updateMany, findFirst: mocks.findFirst, findUniqueOrThrow: mocks.findUniqueOrThrow }, enrollment: { count: mocks.enrollments }, feePlan: { findFirst: mocks.plan } }));
 });
 describe("school-scoped student actions", () => {
   it("rejects anonymous submissions", async () => {
@@ -57,10 +57,10 @@ describe("school-scoped student actions", () => {
     expect((await editStudent("other-school-student", initial, form())).error).toContain("Administrator");
     expect(mocks.updateMany).not.toHaveBeenCalled();
   });
-  it("preserves historical fees when a class change is attempted from the details form", async () => {
-    mocks.enrollments.mockResolvedValue(1); const data = form(); data.set("className", "8A");
-    expect((await editStudent("synthetic", initial, data)).error).toContain("Enroll / promote");
-    expect(mocks.updateMany).not.toHaveBeenCalled();
+  it("ignores placement fields submitted to the profile form", async () => {
+    mocks.updateMany.mockResolvedValue({ count: 1 }); const data = form(); data.set("className", "8A");
+    await editStudent("synthetic", initial, data);
+    expect(mocks.updateMany.mock.calls[0][0].data).not.toHaveProperty("className");
   });
   it("shows stale record conflicts", async () => {
     mocks.updateMany.mockResolvedValue({ count: 0 });

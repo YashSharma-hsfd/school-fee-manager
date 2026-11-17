@@ -1,3 +1,4 @@
+import { studentProfile, studentProfileInclude } from "@/services/student-profile";
 import Link from "next/link";
 import { studentWhere } from "@/services/report-filters";
 import { studentFilterSchema, statusLabels } from "@/services/student-status";
@@ -25,16 +26,17 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
     result = await prisma.$transaction(async tx => {
       const total = await tx.student.count({ where });
       const currentPage = Math.min(page, Math.max(1, Math.ceil(total / pageSize)));
-      const students = await tx.student.findMany({ where, orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip: (currentPage - 1) * pageSize, take: pageSize,
-        select: { id: true, name: true, admissionNumber: true, className: true, guardianName: true, guardianPhone: true, status: true } });
-      const classOptions = await tx.student.groupBy({ by: ["className"], where: { schoolId: school.id }, orderBy: { className: "asc" } });
+      const records = await tx.student.findMany({ where, orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip: (currentPage - 1) * pageSize, take: pageSize,
+        include: studentProfileInclude });
+      const students = records.map(studentProfile);
+      const classOptions = (await tx.schoolClass.findMany({ where: { schoolId: school.id }, orderBy: { name: "asc" } })).map(row => ({ className: row.name }));
       return { students, total, currentPage, classOptions };
     });
   } catch {
-    return <main className="mx-auto max-w-6xl px-6 py-12"><h1 className="text-3xl font-semibold">Students</h1><p role="alert" className="mt-6">Student records are temporarily unavailable. Please try again later.</p></main>;
+    return <main id="main-content" className="mx-auto max-w-6xl px-6 py-12"><h1 className="text-3xl font-semibold">Students</h1><p role="alert" className="mt-6">Student records are temporarily unavailable. Please try again later.</p></main>;
   }
   const href = (page: number) => `/admin/students?${new URLSearchParams({ q, status, className, page: String(page) })}`;
-  return <main className="mx-auto max-w-6xl px-6 py-12">
+  return <main id="main-content" className="mx-auto max-w-6xl px-6 py-12">
     <header className="mb-8"><h1 className="text-3xl font-semibold tracking-tight">Students</h1><p className="mt-2 text-slate-500">Manage student admissions and guardian contacts.</p></header>
     {saved && <p role="status" className="mb-6 text-sm text-green-700">Student updated successfully.</p>}
     <div className="grid items-start gap-8 lg:grid-cols-[1fr_320px]">
@@ -51,7 +53,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
           {result.currentPage * pageSize < result.total ? <Link href={href(result.currentPage + 1)} className="text-indigo-700">Next</Link> : <span />}
         </nav>
       </section>
-      <section className="rounded-xl border border-slate-200 bg-white p-6"><StudentForm schoolId={school.id} /></section>
+      <section id="add-student" className="rounded-2xl border border-indigo-100 bg-white p-6 shadow-sm"><StudentForm schoolId={school.id} /></section>
     </div>
   </main>;
 }

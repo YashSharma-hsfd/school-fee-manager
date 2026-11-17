@@ -20,7 +20,7 @@ describe("school report exports", () => {
     expect(mocks.query).not.toHaveBeenCalled();
   });
   it("exports scoped inclusive dates and original receipt identities without caching", async () => {
-    mocks.payments.mockResolvedValue([{ receiptNumber: "EX-0000001", paidOn: new Date("2026-04-01"), studentAdmissionNumber: "001", studentName: "=Example", mode: "CASH", reference: "", amountCents: 10001, recordedByName: "Synthetic Staff" }]);
+    mocks.payments.mockResolvedValue([{ receiptNumber: "EX-0000001", paidOn: new Date("2026-04-01"), studentAdmissionNumber: "001", studentName: "=Example", mode: "CASH", reference: "", amountPaise: 10001, recordedByName: "Synthetic Staff" }]);
     const response = await GET(new Request("https://example.test/export?kind=collections&from=2026-04-01&to=2026-04-01"), context);
     expect(mocks.access).toHaveBeenCalledWith("school");
     expect(mocks.payments).toHaveBeenCalledWith({ where: { schoolId: "school", reversedAt: null, paidOn: { gte: new Date("2026-04-01"), lte: new Date("2026-04-01") } }, orderBy: [{ paidOn: "asc" }, { id: "asc" }] });
@@ -37,10 +37,10 @@ describe("school report exports", () => {
   it("applies the same class, lifecycle, search and mode filters to collection downloads", async () => {
     mocks.payments.mockResolvedValue([]);
     await GET(new Request("https://example.test/export?kind=collections&q=Demo&className=5A&lifecycle=INACTIVE&mode=CASH"),context);
-    expect(mocks.payments).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ schoolId:"school",mode:"CASH",reversedAt:null,student:expect.objectContaining({schoolId:"school",className:"5A",status:"INACTIVE"}) }) }));
+    expect(mocks.payments).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ schoolId:"school",mode:"CASH",reversedAt:null,student:expect.objectContaining({schoolId:"school",enrollments:{some:{schoolClass:{name:"5A"}}},status:"INACTIVE"}) }) }));
   });
   it("exports payments, discounts and signed reversal entries separately", async () => {
-    mocks.query.mockResolvedValue([{eventOn:"2026-11-16",kind:"PAYMENT_REVERSAL",recordId:"p",admissionNumber:"EX-1",name:"Demo",className:"5A",lifecycle:"ACTIVE",mode:"CASH",amountCents:200001,cashCents:-200001,discountCents:0,state:"REVERSED",receipt:"EX-0001",reason:"Correction",actor:"staff",recordedAt:new Date("2026-11-15T20:00:00Z")}]);
+    mocks.query.mockResolvedValue([{eventOn:"2026-11-16",kind:"PAYMENT_REVERSAL",recordId:"p",admissionNumber:"EX-1",name:"Demo",className:"5A",lifecycle:"ACTIVE",mode:"CASH",amountPaise:200001,cashPaise:-200001,discountPaise:0,state:"REVERSED",receipt:"EX-0001",reason:"Correction",actor:"staff",recordedAt:new Date("2026-11-15T20:00:00Z")}]);
     const response=await GET(new Request("https://example.test/export?kind=transactions&className=5A"),context);
     const output=await response.text();
     expect(output).toContain('"PAYMENT_REVERSAL"');expect(output).toContain('"2000.01","-2000.01","0.00"');

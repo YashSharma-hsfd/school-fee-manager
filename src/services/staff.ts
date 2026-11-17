@@ -15,7 +15,7 @@ export async function createStaff(actor: SessionUser, schoolId: string, input: u
   const passwordHash = await hashPassword(data.password);
   return inSchool(actor, schoolId, "access", async tx => {
     const operator = await tx.user.findUnique({ where: { id: actor.id } });
-    if (!operator?.active || operator.role !== "ADMIN") throw new SchoolAccessError();
+    if (!operator?.isActive || operator.role !== "ADMIN") throw new SchoolAccessError();
     if (!await verifyPassword(data.currentPassword, operator.passwordHash)) throw new FeeRuleError("Your current password is incorrect");
     if (await tx.user.findUnique({ where: { email: data.email } })) throw new FeeRuleError("Account already exists. Use the school-access form to grant membership instead.");
     const user = await tx.user.create({ data: { name: data.name, email: data.email, role: data.role, passwordHash,
@@ -31,12 +31,12 @@ export async function recoverStaffPassword(actor: SessionUser, schoolId: string,
   const passwordHash = await hashPassword(data.password);
   return inSchool(actor, schoolId, "access", async tx => {
     const operator = await tx.user.findUnique({ where: { id: actor.id } });
-    if (!operator?.active || operator.role !== "ADMIN") throw new SchoolAccessError();
+    if (!operator?.isActive || operator.role !== "ADMIN") throw new SchoolAccessError();
     if (!await verifyPassword(data.currentPassword, operator.passwordHash)) throw new FeeRuleError("Your current password is incorrect");
     const target = await tx.user.findUnique({ where: { id: data.userId }, include: { memberships: true } });
-    if (!target?.active || target.role === "ADMIN" || target.id === actor.id || !target.memberships.some(m => m.schoolId === schoolId)) throw new FeeRuleError("Recovery is available only for active non-administrator staff in this school");
+    if (!target?.isActive || target.role === "ADMIN" || target.id === actor.id || !target.memberships.some(m => m.schoolId === schoolId)) throw new FeeRuleError("Recovery is available only for active non-administrator staff in this school");
     // A password is global: school access alone must not permit taking over another school's staff.
-    const managed = await tx.schoolMembership.findMany({ where: { userId: actor.id, manageAccess: true, schoolId: { in: target.memberships.map(m => m.schoolId) } } });
+    const managed = await tx.schoolMembership.findMany({ where: { userId: actor.id, role: { not: "MANAGEMENT" }, canManageAccess: true, isActive: true, schoolId: { in: target.memberships.map(m => m.schoolId) } } });
     if (managed.length !== target.memberships.length) throw new FeeRuleError("This account is shared with schools you do not manage. Ask the account administrator to recover it.");
     await tx.user.update({ where: { id: target.id }, data: { passwordHash } });
     await tx.session.deleteMany({ where: { userId: target.id } });
@@ -50,8 +50,8 @@ export async function revokeStaffAccess(actor: SessionUser, schoolId: string, in
   return inSchool(actor, schoolId, "access", async tx => {
     if (userId === actor.id) throw new FeeRuleError("You cannot remove your own school access");
     const member = await tx.schoolMembership.findUnique({ where: { schoolId_userId: { schoolId, userId } } });
-    if (!member) return;
-    await tx.schoolMembership.delete({ where: { schoolId_userId: { schoolId, userId } } });
-    await audit(tx, actor, schoolId, "STAFF_ACCESS_REVOKED", userId, { role: member.role, configureFees: member.configureFees, manageAccess: member.manageAccess });
+    if (!member || !member.isActive) return;
+    await tx.schoolMembership.update({ where: { schoolId_userId: { schoolId, userId } }, data: { isActive: false } });
+    await audit(tx, actor, schoolId, "STAFF_ACCESS_REVOKED", userId, { role: member.role, canConfigureFees: member.canConfigureFees, canManageAccess: member.canManageAccess });
   });
 }

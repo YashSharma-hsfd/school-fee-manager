@@ -22,11 +22,11 @@ describe("school page guards", () => {
   it("returns not-found for other schools and forbidden operations", async () => {
     mocks.membership.mockResolvedValue(null);
     await expect(schoolAccess("school")).rejects.toThrow("not found");
-    mocks.membership.mockResolvedValue({ role: "ACCOUNTANT", configureFees: false, manageAccess: false });
+    mocks.membership.mockResolvedValue({ role: "ACCOUNTANT", canConfigureFees: false, canManageAccess: false });
     await expect(schoolAccess("school", "students")).rejects.toThrow("not found");
   });
   it("uses the signed-in identity and explicit school grants", async () => {
-    mocks.membership.mockResolvedValue({ role: "ACCOUNTANT", configureFees: true, school: { id: "school" } });
+    mocks.membership.mockResolvedValue({ role: "ACCOUNTANT", canConfigureFees: true, school: { id: "school" } });
     expect((await schoolAccess("school", "configure")).school.id).toBe("school");
     expect(mocks.membership).toHaveBeenCalledWith({ where: { schoolId_userId: { schoolId: "school", userId: "staff" } }, include: { school: true } });
   });

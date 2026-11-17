@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { Prisma } from "@prisma/client";
 import { updateStudent, StudentAccessError, StudentConflictError, DuplicateAdmissionNumberError } from "../../src/services/students";
 
-const input = { name: " Example Student ", admissionNumber: " sch-001 ", className: "7A", guardianName: "Example Guardian", guardianPhone: "+49 123456789" };
+const input = { dateOfBirth: "2010-05-10", admissionDate: "", name: " Example Student ", admissionNumber: " sch-001 ", guardianName: "Example Guardian", guardianPhone: "+49 123456789" };
 const version = { id: "synthetic-student", updatedAt: "2026-11-13T00:00:00.000Z" };
 const admin = async () => ({ role: "ADMIN" });
 

@@ -1,0 +1,3 @@
+export default function LoadingSchoolPage() {
+  return <main id="main-content" aria-busy="true" className="mx-auto max-w-7xl space-y-6 px-6 py-10"><p role="status" className="text-sm text-slate-600">Loading your school workspace…</p><div aria-hidden="true" className="space-y-5 motion-safe:animate-pulse"><div className="h-8 w-56 rounded-lg bg-slate-200" /><div className="h-24 rounded-2xl border border-slate-200 bg-white" /><div className="grid gap-4 sm:grid-cols-3">{[1, 2, 3].map(item => <div key={item} className="h-32 rounded-2xl border border-slate-200 bg-white" />)}</div><div className="h-64 rounded-2xl border border-slate-200 bg-white" /></div></main>;
+}

@@ -5,8 +5,8 @@ import { reportFiltersSchema, paymentWhere, studentSqlWhere, balanceSqlFilter, s
 export async function collectionReport(schoolId: string, input: unknown) {
   const filters = reportFiltersSchema.parse(input);
   const where = paymentWhere(schoolId, filters);
-  const modes = await prisma.payment.groupBy({ by: ["mode"], where, _sum: { amountCents: true }, _count: true, orderBy: { mode: "asc" } });
-  return { filters, modes, total: modes.reduce((sum, mode) => sum + BigInt(mode._sum.amountCents || 0), BigInt(0)) };
+  const modes = await prisma.payment.groupBy({ by: ["mode"], where, _sum: { amountPaise: true }, _count: true, orderBy: { mode: "asc" } });
+  return { filters, modes, total: modes.reduce((sum, mode) => sum + BigInt(mode._sum.amountPaise || 0), BigInt(0)) };
 }
 
 export function schoolToday() {
@@ -15,27 +15,34 @@ export function schoolToday() {
 
 // Aggregate allocations before joining charges; joining two allocation tables directly would multiply amounts.
 export function reportCte(schoolId: string, today: string, input: unknown = {}) {
-  return Prisma.sql`WITH paid AS (
-    SELECT a."chargeId", SUM(a."amountCents") AS amount FROM "PaymentAllocation" a
+  return Prisma.sql`WITH student_profiles AS (
+    SELECT s.*, COALESCE(placement.name, 'Not enrolled') AS "className", COALESCE(contact.name, '') AS "guardianName", COALESCE(contact.phone, '') AS "guardianPhone",
+      NOT EXISTS (SELECT 1 FROM "Enrollment" e JOIN "AcademicYear" y ON y.id=e."academicYearId" AND y."schoolId"=e."schoolId" JOIN "EnrollmentFeeAssignment" a ON a."enrollmentId"=e.id AND a."schoolId"=e."schoolId" WHERE e."studentId"=s.id AND e."schoolId"=s."schoolId" AND y."startsOn" <= ${today}::date AND y."endsOn" >= ${today}::date) AS "feesNotConfigured"
+    FROM "Student" s
+    LEFT JOIN LATERAL (SELECT c.name FROM "Enrollment" e JOIN "AcademicYear" y ON y.id=e."academicYearId" AND y."schoolId"=e."schoolId" JOIN "SchoolClass" c ON c.id=e."classId" AND c."schoolId"=e."schoolId" WHERE e."studentId"=s.id AND e."schoolId"=s."schoolId" ORDER BY y."startsOn" DESC LIMIT 1) placement ON true
+    LEFT JOIN LATERAL (SELECT g.name, g.phone FROM "StudentGuardian" sg JOIN "Guardian" g ON g.id=sg."guardianId" AND g."schoolId"=sg."schoolId" WHERE sg."studentId"=s.id AND sg."schoolId"=s."schoolId" ORDER BY sg."isPrimaryContact" DESC, sg."createdAt", sg.id LIMIT 1) contact ON true
+    WHERE s."schoolId"=${schoolId}
+  ), paid AS (
+    SELECT a."chargeId", SUM(a."amountPaise") AS amount FROM "PaymentAllocation" a
     JOIN "Payment" p ON p.id = a."paymentId" AND p."schoolId" = a."schoolId"
     WHERE a."schoolId" = ${schoolId} AND p."reversedAt" IS NULL GROUP BY a."chargeId"
   ), credited AS (
-    SELECT a."chargeId", SUM(a."amountCents") AS amount FROM "DiscountAllocation" a
+    SELECT a."chargeId", SUM(a."amountPaise") AS amount FROM "DiscountAllocation" a
     JOIN "Discount" d ON d.id = a."discountId" AND d."schoolId" = a."schoolId"
     WHERE a."schoolId" = ${schoolId} AND d."reversedAt" IS NULL GROUP BY a."chargeId"
   ), charge_balances AS (
-    SELECT COALESCE(e."studentId", c."openingStudentId") AS "studentId", c."amountCents" AS charged, c."dueOn",
-      c."amountCents" - COALESCE(p.amount, 0) - COALESCE(d.amount, 0) AS remaining
+    SELECT COALESCE(e."studentId", c."openingStudentId") AS "studentId", c."amountPaise" AS charged, c."dueOn",
+      c."amountPaise" - COALESCE(p.amount, 0) - COALESCE(d.amount, 0) AS remaining
     FROM "StudentCharge" c LEFT JOIN "Enrollment" e ON e.id = c."enrollmentId" AND e."schoolId" = c."schoolId"
     LEFT JOIN paid p ON p."chargeId" = c.id LEFT JOIN credited d ON d."chargeId" = c.id
     WHERE c."schoolId" = ${schoolId}
   ), student_balances AS (
-    SELECT s.id, s.name, s."admissionNumber", s."className", s.status, COUNT(c."studentId") AS "chargeCount",
+    SELECT s.id, s.name, s."admissionNumber", s."className", s.status, s."feesNotConfigured", COUNT(c."studentId") AS "chargeCount",
       COALESCE(SUM(c.charged), 0)::bigint AS charged,
       COALESCE(SUM(c.remaining), 0)::bigint AS remaining,
       COALESCE(SUM(CASE WHEN c."dueOn" < ${today}::date THEN c.remaining ELSE 0 END), 0)::bigint AS overdue
-    FROM "Student" s LEFT JOIN charge_balances c ON c."studentId" = s.id
-    WHERE ${studentSqlWhere(schoolId, input)} GROUP BY s.id
+    FROM student_profiles s LEFT JOIN charge_balances c ON c."studentId" = s.id
+    WHERE ${studentSqlWhere(schoolId, input)} GROUP BY s.id, s.name, s."admissionNumber", s."className", s.status, s."feesNotConfigured"
   )`;
 }
 
@@ -50,9 +57,9 @@ export async function schoolReport(schoolId: string, page: number, status: strin
         COUNT(*) FILTER (WHERE "chargeCount" > 0 AND remaining = 0)::bigint AS "fullyPaid",
         COUNT(*) FILTER (WHERE "chargeCount" > 0 AND overdue = 0)::bigint AS "upToDate",
         COALESCE(SUM(remaining), 0)::bigint AS outstanding, COALESCE(SUM(overdue), 0)::bigint AS overdue FROM student_balances ${filter}`),
-    prisma.$queryRaw<{ id: string; name: string; admissionNumber: string; className: string; status: "ACTIVE" | "INACTIVE" | "WITHDRAWN"; chargeCount: bigint; remaining: bigint; overdue: bigint }[]>(Prisma.sql`${cte} SELECT * FROM student_balances ${filter} ORDER BY name, id LIMIT 51 OFFSET ${(page - 1) * 50}`),
-    prisma.payment.aggregate({ where: { schoolId, reversedAt: null, student: { schoolId, ...studentWhere(input) } }, _sum: { amountCents: true }, _count: true }),
-    prisma.discount.aggregate({ where: { schoolId, reversedAt: null, student: { schoolId, ...studentWhere(input) } }, _sum: { amountCents: true } }),
+    prisma.$queryRaw<{ id: string; name: string; admissionNumber: string; className: string; status: "ACTIVE" | "INACTIVE" | "WITHDRAWN" | "GRADUATED"; feesNotConfigured: boolean; chargeCount: bigint; remaining: bigint; overdue: bigint }[]>(Prisma.sql`${cte} SELECT * FROM student_balances ${filter} ORDER BY name, id LIMIT 51 OFFSET ${(page - 1) * 50}`),
+    prisma.payment.aggregate({ where: { schoolId, reversedAt: null, student: { schoolId, ...studentWhere(input) } }, _sum: { amountPaise: true }, _count: true }),
+    prisma.discount.aggregate({ where: { schoolId, reversedAt: null, student: { schoolId, ...studentWhere(input) } }, _sum: { amountPaise: true } }),
   ]);
   return { today, summary: summaryRows[0], students: students.slice(0, 50), hasNext: students.length > 50, collections, discounts };
 }

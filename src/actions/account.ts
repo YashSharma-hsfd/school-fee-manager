@@ -17,10 +17,10 @@ export async function changeOwnPassword(_state: SchoolFormState, formData: FormD
       .refine(value => value.password === value.confirmation, "New passwords must match")
       .refine(value => value.password !== value.currentPassword, "Choose a different new password").parse(Object.fromEntries(formData));
     const user = await prisma.user.findUnique({ where: { id: actor.id } });
-    if (!user?.active || !await verifyPassword(data.currentPassword, user.passwordHash)) throw new FeeRuleError("Your current password is incorrect");
+    if (!user?.isActive || !await verifyPassword(data.currentPassword, user.passwordHash)) throw new FeeRuleError("Your current password is incorrect");
     const passwordHash = await hashPassword(data.password);
     await prisma.$transaction(async tx => {
-      const updated = await tx.user.updateMany({ where: { id: actor.id, active: true, passwordHash: user.passwordHash }, data: { passwordHash } });
+      const updated = await tx.user.updateMany({ where: { id: actor.id, isActive: true, passwordHash: user.passwordHash }, data: { passwordHash } });
       if (updated.count !== 1) throw new FeeRuleError("Account changed. Sign in again before retrying.");
       await tx.session.deleteMany({ where: { userId: actor.id } });
       const memberships = await tx.schoolMembership.findMany({ where: { userId: actor.id } });

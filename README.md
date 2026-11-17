@@ -6,7 +6,7 @@ MVP feature scope is frozen after student lifecycle and the operational dashboar
 
 See [user workflows](docs/user-workflows.md) for the Administration, Accountant and Management screen-by-screen paths. Shared school navigation shows the current role and active page; Student accounts is the dedicated search workspace, with shortcuts from accounts to charges/payment/history and from receipts back to the next student.
 
-Cloud pilot setup: [Neon PostgreSQL setup](docs/cloud-postgresql.md). Dedicated cloud commands use the ignored `.env.cloud.local` file, keeping normal development and tests on the local database.
+Cloud pilot setup: [Supabase PostgreSQL setup](docs/cloud-postgresql.md). Dedicated cloud commands use the ignored `.env.cloud.local` file, keeping normal development and tests on the local database.
 
 ## Run locally
 
@@ -74,3 +74,4 @@ For browser tests, install Chromium with `npx playwright install chromium`. Set 
 ## Authentication
 
 Sessions use hashed random tokens, expire after eight hours, and recheck current database active status and role. Sign-out revokes the token. Production requires HTTPS for secure cookies. Login attempts are limited per email across instances. Passwords and password hashes are never included in audit details.
+

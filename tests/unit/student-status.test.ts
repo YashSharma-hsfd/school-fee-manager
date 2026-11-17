@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { tx } = vi.hoisted(() => ({ tx: {
   schoolMembership: { findUnique: vi.fn() }, student: { findFirst: vi.fn(), update: vi.fn() },
-  feePlan: { findUnique: vi.fn() }, auditEvent: { create: vi.fn() },
+  studentStatusHistory: { create: vi.fn() }, feePlan: { findUnique: vi.fn() }, auditEvent: { create: vi.fn() },
 } }));
 vi.mock("@/lib/prisma", () => ({ prisma: { $transaction: (work: (client: unknown) => unknown) => work(tx) } }));
 import { changeStudentStatus, studentFilterSchema } from "../../src/services/student-status";

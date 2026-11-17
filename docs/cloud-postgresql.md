@@ -1,41 +1,34 @@
-# Cloud PostgreSQL pilot
+# Supabase PostgreSQL pilot
 
-## Selected setup
+Create `school-fee-manager-pilot` under your own Supabase account, using a Free organization and Mumbai (`ap-south-1`). This setup does not create a project or enable billing by itself.
 
-- Provider: Neon managed PostgreSQL, Free pilot.
-- Project name: `school-fee-manager-pilot` (create under the user's own Neon account).
-- Region: AWS Singapore (`aws-ap-southeast-1`), for an India-based pilot. Plan to run the app server nearby. Neon currently offers no India region; confirm data-residency requirements before using real school records.
-- Start with an empty cloud database. Local demo students, staff credentials and payments are not automatically transferred.
+## Project setup
 
-This document/configuration does not provision a project, activate billing, deploy the app or transfer data. Actual provisioning needs the user's Neon account connection. Production should use its own project and credentials once recovery, cost limits and hosting are agreed.
+1. Connect your Supabase account, then create the Free pilot project in Mumbai. Choose and store the database password privately.
+2. Disable the project's Data API before applying the application migrations. This app accesses PostgreSQL through Prisma and uses its existing authentication. Its public tables include private student and staff data; they must not become publicly accessible through the Data API.
+3. Copy `config/cloud-database.env.example` to `.env.cloud.local` only if that file does not already exist. Keep local `.env` unchanged. The cloud file is ignored by Git; never paste credentials into chat.
+4. Set `CLOUD_PROJECT_REF` from project settings. Copy connection strings from Supabase's Connect panel, including the actual pooler hostname and username. Do not construct hostnames from region names.
+5. Set `CLOUD_DATABASE_URL` to the session pooler on port 5432, or transaction pooler on port 6543 with `pgbouncer=true`. Enable TLS with `sslmode=require` or certificate verification.
+6. Set `CLOUD_DIRECT_URL` to the session pooler on port 5432 for IPv4 compatibility, or the direct database endpoint on port 5432 if IPv6 is available. Never use transaction pooling for migrations. Both URLs must reference the same project and database.
 
-## Credentials
+## Initialize and verify
 
-Create `.env.cloud.local` from `config/cloud-database.env.example` only if it does not already exist. Enter the connection strings privately:
+Run `npm run db:cloud:status` to check the target. Unapplied migrations are expected on a new database. Run `npm run db:cloud:deploy`, then check status again. These commands use Prisma migration history; do not substitute dashboard SQL execution, migrate reset, db push or demo seeds.
 
-- `CLOUD_DATABASE_URL`: pooled URL copied from Neon for the deployed app.
-- `CLOUD_DIRECT_URL`: unpooled/direct URL for migrations and administrative commands.
+The cloud starts empty. To create the first administrator, privately set `STAFF_EMAIL`, `STAFF_NAME`, `STAFF_ROLE=ADMIN`, and `STAFF_PASSWORD` (12–256 characters) in the shell. Run `npm run staff:cloud:create`, then remove the password variable. Local accounts are not copied.
 
-Both must use TLS (`sslmode=require` or certificate verification) and reference the same endpoint/database. Separate runtime and migration roles are supported. Do not paste credentials into chat or commit the file; `.env.cloud.local` is covered by `.gitignore`.
+When deploying the app, set the host's server-only `DATABASE_URL` to the runtime connection string. Never put it in a NEXT_PUBLIC variable. Keep migration credentials in a trusted operator environment. Next.js does not automatically load `.env.cloud.local`; ordinary development and disposable integration tests keep using their existing local configuration.
 
-Existing `.env` stays local. Next.js does not automatically load `.env.cloud.local`. CI and the disposable PostgreSQL test runner stay local and are not pointed at Neon. Prisma's schema is unchanged; the cloud command sets the child process's URL explicitly for the selected direct target. No new driver adapter or service is needed for the current Prisma 6 PostgreSQL connector.
+Verify login, all three role workflows, payments, receipts, reports and reversals using synthetic records before adding real school data. This task does not deploy the application or transfer local records.
 
-## Initialize and verify the pilot
+## Production and expansion
 
-1. After the project exists, copy its two URLs into the private file. Check the displayed hostname/database carefully when running commands; passwords are not printed.
-2. Run `npm run db:cloud:status`. On a new database it can report unapplied migrations and return a non-zero status, which is expected before deployment.
-3. Run `npm run db:cloud:deploy` to apply the repository's committed migrations. This never resets the database, runs demo seeds or copies local data. Do not use `prisma migrate dev`, `migrate reset` or `db push` on production.
-4. Run `npm run db:cloud:status` again and verify all migrations are applied.
-5. For the first cloud administrator, set `STAFF_EMAIL`, `STAFF_NAME`, `STAFF_ROLE=ADMIN`, and a privately chosen `STAFF_PASSWORD` (12–256 characters) in the shell. Run `npm run staff:cloud:create`, then remove `STAFF_PASSWORD` from that shell. This creates an existing-script staff account in the validated cloud target and never overwrites an account. Ordinary `staff:create` still targets local `.env`.
-6. On the chosen app host, set its server-only **DATABASE_URL** secret to the pooled connection string. Do not use a NEXT_PUBLIC variable. Keep the unpooled migration credential in the trusted migration job/operator environment, not in browser code. Select an application region near the database.
-7. Sign in to the deployed pilot, create a demo school and use synthetic records to verify login, payments, receipts, reports and reversals. Existing local login credentials will not work unless separately provisioned on the cloud database.
+Supabase remains PostgreSQL, so future student details, guardians, admissions and attendance can be added with versioned Prisma migrations. Existing authentication stays in place. Supabase Auth or document Storage would require separate integration and access policies.
 
-## Before real production use
-
-Agree the monthly budget and recovery retention, configure a production database and least-privilege runtime role, take a backup and verify a restore, and verify the hosted app's role workflows over HTTPS. Keep development/preview/test deployments off the production database. The Free pilot does not establish that production recovery requirements are met, and creating a production branch from demo-filled data is not a clean production initialization.
+Before real production use, agree budget, backup retention and recovery requirements; verify a restore; use an appropriate production plan and restricted runtime credentials; keep development and preview deployments separate. The Free pilot does not establish production recovery guarantees.
 
 ## References
 
-- [Neon regions](https://neon.com/docs/introduction/regions) — region is fixed per project; choose near the application server.
-- [Neon Prisma guide](https://neon.com/docs/guides/prisma) — pooled application connections and direct migration connections, including Prisma 6 guidance.
-- [Neon plans](https://neon.com/docs/introduction/plans) and [restore history](https://neon.com/docs/postgres/backup-restore/history-window) — review current limits before choosing production recovery/capacity.
+- https://supabase.com/docs/guides/database/prisma
+- https://supabase.com/docs/guides/database/connecting-to-postgres
+- https://supabase.com/docs/guides/platform/regions

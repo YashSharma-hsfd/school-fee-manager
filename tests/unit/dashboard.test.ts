@@ -10,7 +10,7 @@ describe("school dashboard", () => {
     // Still November 14 in UTC; already November 15 at the school.
     vi.setSystemTime(new Date("2026-11-14T20:00:00Z"));
     mocks.query.mockResolvedValue([{ active: BigInt(3), inactive: BigInt(1), withdrawn: BigInt(1), unassigned: BigInt(1), overdueStudents: BigInt(2), overdue: BigInt(10001), outstanding: BigInt(20001) }]);
-    mocks.modes.mockImplementation(async ({ where }) => [{ mode: "CASH", _count: 1, _sum: { amountCents: where.paidOn.gte.toISOString().slice(0, 10) === "2026-11-15" ? 10001 : 50002 } }]);
+    mocks.modes.mockImplementation(async ({ where }) => [{ mode: "CASH", _count: 1, _sum: { amountPaise: where.paidOn.gte.toISOString().slice(0, 10) === "2026-11-15" ? 10001 : 50002 } }]);
     mocks.recent.mockResolvedValue([]);
   });
   afterEach(() => vi.useRealTimers());

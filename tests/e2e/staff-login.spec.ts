@@ -3,6 +3,7 @@ import { test, expect } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import { hashPassword } from "../../src/lib/passwords";
+import { cleanupSchool } from "../helpers/cleanup-school";
 
 // Opt in only against a migrated, disposable development/test database.
 test.describe("database-backed staff login", () => {
@@ -27,10 +28,7 @@ test.describe("database-backed staff login", () => {
     await context.addCookies([{ name: "school-fee-active-school", value: schoolId, domain: "localhost", path: "/" }]);
   });
   test.afterAll(async () => {
-    await prisma.student.deleteMany({ where: { admissionNumber: `UI-${suffix}`.toUpperCase() } });
-    await prisma.auditEvent.deleteMany({ where: { schoolId } });
-    await prisma.schoolMembership.deleteMany({ where: { schoolId } });
-    await prisma.school.delete({ where: { id: schoolId } });
+    if (schoolId) await cleanupSchool(prisma, schoolId);
     await prisma.user.deleteMany({ where: { id: { in: accounts.map(account => account.id) } } });
     await prisma.loginAttempt.deleteMany({ where: { email: { in: accounts.map(account => account.email) } } });
     await prisma.$disconnect();
@@ -45,10 +43,10 @@ test.describe("database-backed staff login", () => {
     await page.getByRole("button", { name: "Manage students", exact: true }).click();
     await page.getByLabel("Student name", { exact: true }).fill("Synthetic UI Student");
     await page.getByLabel("Admission number", { exact: true }).fill(`UI-${suffix}`);
-    await page.getByLabel("Class", { exact: true }).fill("7A");
+    await page.getByLabel("Date of birth", { exact: true }).fill("2010-05-10");
     await page.getByLabel("Guardian name", { exact: true }).fill("Synthetic Guardian");
     await page.getByLabel("Guardian phone", { exact: true }).fill("+49 123456789");
-    await page.getByRole("button", { name: "Add student", exact: true }).click();
+    await page.getByRole("group", { name: "Add student", exact: true }).getByRole("button", { name: "Add student", exact: true }).click();
     await expect(page.getByRole("status")).toContainText("Student added successfully");
     await page.getByLabel("Search students").fill(`UI-${suffix}`);
     await page.getByRole("button", { name: "Search", exact: true }).click();
@@ -61,12 +59,12 @@ test.describe("database-backed staff login", () => {
     await page.goto(editUrl);
     await expect(page.getByLabel("Student name", { exact: true })).toHaveValue("Synthetic UI Student");
     await page.getByLabel("Student name", { exact: true }).fill("Updated UI Student");
-    await page.getByLabel("Class", { exact: true }).fill("8A");
+    await page.getByLabel("Guardian phone", { exact: true }).fill("+49 987654321");
     await page.getByRole("button", { name: "Save changes", exact: true }).click();
     await expect(page.getByRole("status")).toContainText("Student updated successfully");
     await page.getByLabel("Search students").fill(`UI-${suffix}`);
     await page.getByRole("button", { name: "Search", exact: true }).click();
-    await expect(page.getByRole("row").filter({ hasText: "Updated UI Student" })).toContainText("8A");
+    await expect(page.getByRole("row").filter({ hasText: "Updated UI Student" })).toContainText("+49 987654321");
     await page.getByRole("button", { name: "Sign out" }).click();
     await page.getByLabel("Email").fill(accounts[1].email);
     await page.getByLabel("Password").fill(password);

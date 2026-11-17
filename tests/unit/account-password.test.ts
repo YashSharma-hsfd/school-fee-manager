@@ -24,7 +24,7 @@ describe("self-service password change", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     mocks.session.mockResolvedValue({ id: "staff", name: "Synthetic Staff", role: "ACCOUNTANT" });
-    mocks.find.mockResolvedValue({ id: "staff", active: true, passwordHash: "previous-hash" });
+    mocks.find.mockResolvedValue({ id: "staff", isActive: true, passwordHash: "previous-hash" });
     mocks.verify.mockResolvedValue(true); mocks.hash.mockResolvedValue("replacement-hash");
     mocks.update.mockResolvedValue({ count: 1 });
     mocks.memberships.mockResolvedValue([{ schoolId: "school" }]);
@@ -46,7 +46,7 @@ describe("self-service password change", () => {
   it("rejects a concurrent reset instead of overwriting a newer password", async () => {
     mocks.update.mockResolvedValue({ count: 0 });
     expect((await changeOwnPassword(initial, form())).error).toContain("Account changed");
-    expect(mocks.update).toHaveBeenCalledWith({ where: { id: "staff", active: true, passwordHash: "previous-hash" }, data: { passwordHash: "replacement-hash" } });
+    expect(mocks.update).toHaveBeenCalledWith({ where: { id: "staff", isActive: true, passwordHash: "previous-hash" }, data: { passwordHash: "replacement-hash" } });
     expect(mocks.revoke).not.toHaveBeenCalled();
     expect(mocks.cookieDelete).not.toHaveBeenCalled();
   });

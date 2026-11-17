@@ -3,13 +3,13 @@ import { Prisma } from "@prisma/client";
 import { studentSchema } from "../../src/validators/student";
 import { createStudent, DuplicateAdmissionNumberError, StudentAccessError } from "../../src/services/students";
 
-const input = { name: " Asha Example ", admissionNumber: " sch-001 ", className: " 5 A ", guardianName: " Example Guardian ", guardianPhone: " +49 123 456789 " };
+const input = { dateOfBirth: "2010-05-10", admissionDate: "", name: " Asha Example ", admissionNumber: " sch-001 ", className: " 5 A ", guardianName: " Example Guardian ", guardianPhone: " +49 123 456789 " };
 
 describe("student input", () => {
   it("trims fields and normalizes admission numbers", () => {
-    expect(studentSchema.parse(input)).toEqual({ name: "Asha Example", admissionNumber: "SCH-001", className: "5 A", guardianName: "Example Guardian", guardianPhone: "+49 123 456789" });
+    expect(studentSchema.parse(input)).toEqual({ dateOfBirth: "2010-05-10", admissionDate: "", name: "Asha Example", admissionNumber: "SCH-001", guardianName: "Example Guardian", guardianPhone: "+49 123 456789" });
   });
-  it.each(Object.keys(input))("rejects a blank %s", key => {
+  it.each(["name", "admissionNumber", "dateOfBirth"])("rejects a blank %s", key => {
     expect(studentSchema.safeParse({ ...input, [key]: " " }).success).toBe(false);
   });
   it.each(["abc", "123", "1234567<script>"])("rejects invalid phone %s", guardianPhone => {

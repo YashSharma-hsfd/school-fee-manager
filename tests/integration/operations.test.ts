@@ -1,9 +1,11 @@
+import { studentProfile, studentProfileInclude } from "../../src/services/student-profile";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { prisma } from "../../src/lib/prisma";
 import { hashPassword, verifyPassword } from "../../src/lib/passwords";
 import { importHeaders, importStudents } from "../../src/services/student-import";
 import { bulkPromote } from "../../src/services/bulk-promotion";
+import { bulkEnroll, assignStudentFees } from "../../src/services/bulk-enrollment";
 import { correctCharge, createClass, createFeePlan, createYear, enrollStudent, openCharges, recordDiscount, recordPayment, reverseDiscount, reversePayment } from "../../src/services/fees";
 import { collectionReport, schoolReport } from "../../src/services/fee-reports";
 import { createStaff, recoverStaffPassword, revokeStaffAccess } from "../../src/services/staff";
@@ -23,7 +25,7 @@ describe.skipIf(process.env.FEES_E2E !== "1")("school operations in PostgreSQL",
     const passwordHash = await hashPassword(password);
     await prisma.user.createMany({ data: [admin, accountant].map(user => ({ ...user, email: `${user.id}@example.test`, passwordHash })) });
     schoolId = (await prisma.school.create({ data: { name: "Synthetic Operations", code: `OP${suffix}`.toUpperCase(), memberships: { create: [
-      { userId: admin.id, role: "ADMIN", configureFees: true, manageAccess: true }, { userId: accountant.id, role: "ACCOUNTANT" },
+      { userId: admin.id, role: "ADMIN", canConfigureFees: true, canManageAccess: true }, { userId: accountant.id, role: "ACCOUNTANT" },
     ] } } })).id;
     otherSchoolId = (await prisma.school.create({ data: { name: "Other Synthetic Operations", code: `OQ${suffix}`.toUpperCase(), memberships: { create: { userId: admin.id, role: "ADMIN" } } } })).id;
     yearId = (await createYear(admin, schoolId, { name: "2020-21", startsOn: "2020-04-01", endsOn: "2021-03-31" })).id;
@@ -40,7 +42,7 @@ describe.skipIf(process.env.FEES_E2E !== "1")("school operations in PostgreSQL",
     await prisma.user.deleteMany({ where: { id: { in: [admin.id, accountant.id, ...createdUsers] } } });
     await prisma.$disconnect();
   });
-  const csv = (admissions: string[], due = "100.01") => importHeaders.join(",") + "\n" + admissions.map(id => `${id},Synthetic Student,5A,Synthetic Guardian,+49123456789,${due},2020-03-01`).join("\n");
+  const csv = (admissions: string[], due = "100.01") => importHeaders.join(",") + "\n" + admissions.map(id => `${id},Synthetic Student,2010-05-10,,,,Synthetic Guardian,+49123456789,${due},2020-03-01`).join("\n");
   async function student() {
     const admissionNumber = randomUUID();
     await importStudents(admin, schoolId, csv([admissionNumber]));
@@ -49,16 +51,42 @@ describe.skipIf(process.env.FEES_E2E !== "1")("school operations in PostgreSQL",
   const payment = (studentId: string, amount: string, paidOn = "2020-06-01") => ({ studentId, amount, paidOn, mode: "CASH", reference: "synthetic", requestKey: randomUUID() });
   const promotion = (studentIds: string[]) => ({ sourceYearId: yearId, sourceClassId: classId, academicYearId: nextYearId, classId: nextClassId, studentIds });
 
+  it("rolls back the whole enrollment batch on conflict and preserves full-year charges on repeats", async () => {
+    const first = await student(), second = await student();
+    await enrollStudent(admin, schoolId, { studentId: second.id, academicYearId: yearId, classId, rollNumber: `CONFLICT-${suffix}` });
+    await expect(bulkEnroll(admin, schoolId, { academicYearId: yearId, classId, students: [{ studentId: first.id }, { studentId: second.id, rollNumber: "DIFFERENT" }] })).rejects.toThrow("different roll number");
+    expect(await prisma.enrollment.count({ where: { schoolId, studentId: first.id } })).toBe(0);
+    const input = { academicYearId: yearId, classId, startsOn: "2020-11-01", students: [{ studentId: first.id }] };
+    await bulkEnroll(admin, schoolId, input); await bulkEnroll(admin, schoolId, input);
+    const record = await prisma.enrollment.findFirstOrThrow({ where: { schoolId, studentId: first.id, academicYearId: yearId }, include: { charges: true } });
+    expect(record.charges).toHaveLength(1);
+    expect(record.charges[0].amountPaise).toBe(100000);
+    expect(record.charges[0].dueOn.toISOString()).toBe("2020-04-10T00:00:00.000Z");
+    await expect(assignStudentFees(admin, schoolId, { enrollmentIds: [record.id] })).resolves.toEqual({ assigned: 0, unchanged: 1 });
+    await expect(assignStudentFees(admin, otherSchoolId, { enrollmentIds: [record.id] })).rejects.toThrow("this school");
+    expect(await prisma.studentCharge.count({ where: { enrollmentId: record.id } })).toBe(1);
+  });
+
+  it("rejects imported roll collisions atomically without creating profiles or guardians", async () => {
+    const first = await student();
+    const roll = `IMPORT-${suffix}`;
+    await enrollStudent(admin, schoolId, { studentId: first.id, academicYearId: yearId, classId, rollNumber: roll });
+    const admission = randomUUID().toUpperCase();
+    const text = importHeaders.join(",") + ",rollNumber\n" + `${admission},Synthetic,2010-05-10,,2020-21,5A,Guardian,+49123456789,0,,${roll}`;
+    await expect(importStudents(admin, schoolId, text)).rejects.toThrow("already used");
+    expect(await prisma.student.count({ where: { schoolId, admissionNumber: admission } })).toBe(0);
+  });
+
   it("imports opening dues without billing a new year and rejects duplicate batches atomically", async () => {
     const s = await student();
     expect(await prisma.enrollment.count({ where: { studentId: s.id } })).toBe(0);
-    expect((await openCharges(prisma, schoolId, s.id))[0]).toMatchObject({ openingStudentId: s.id, amountCents: 10001, enrollmentId: null });
+    expect((await openCharges(prisma, schoolId, s.id))[0]).toMatchObject({ openingStudentId: s.id, amountPaise: 10001, enrollmentId: null });
     const fresh = randomUUID();
     await expect(importStudents(admin, schoolId, csv([fresh, s.admissionNumber]))).rejects.toThrow("already exists");
     expect(await prisma.student.count({ where: { schoolId, admissionNumber: fresh.toUpperCase() } })).toBe(0);
     await expect(importStudents(accountant, schoolId, csv([fresh]))).rejects.toThrow("permission");
     const received = await recordPayment(accountant, schoolId, payment(s.id, "10.01"));
-    expect((await openCharges(prisma, schoolId, s.id))[0].settledCents).toBe(1001);
+    expect((await openCharges(prisma, schoolId, s.id))[0].settledPaise).toBe(1001);
     expect((await schoolReport(schoolId, 1, "overdue")).students.find(row => row.id === s.id)?.remaining).toBe(BigInt(9000));
     await reversePayment(accountant, schoolId, { paymentId: received.id, reason: "Synthetic reversal" });
   });
@@ -70,8 +98,8 @@ describe.skipIf(process.env.FEES_E2E !== "1")("school operations in PostgreSQL",
     await Promise.all([1, 2].map(() => reverseDiscount(accountant, schoolId, { discountId: discount.id, reason: "Synthetic correction" })));
     const after = await schoolReport(schoolId, 1, "all");
     expect(after.summary.outstanding - before.summary.outstanding).toBe(BigInt(2000));
-    expect(before.discounts._sum.amountCents! - (after.discounts._sum.amountCents || 0)).toBe(2000);
-    expect((await openCharges(prisma, schoolId, s.id))[0].settledCents).toBe(0);
+    expect(before.discounts._sum.amountPaise! - (after.discounts._sum.amountPaise || 0)).toBe(2000);
+    expect((await openCharges(prisma, schoolId, s.id))[0].settledPaise).toBe(0);
     expect(await prisma.discountAllocation.count({ where: { discountId: discount.id } })).toBe(1);
     expect(await prisma.auditEvent.count({ where: { schoolId, entityId: discount.id, action: "DISCOUNT_REVERSED" } })).toBe(1);
     await expect(reverseDiscount(accountant, otherSchoolId, { discountId: discount.id, reason: "Wrong school" })).rejects.toThrow("permission");
@@ -81,11 +109,11 @@ describe.skipIf(process.env.FEES_E2E !== "1")("school operations in PostgreSQL",
     const s = await student();
     await recordPayment(accountant, schoolId, payment(s.id, "30"));
     const [charge] = await openCharges(prisma, schoolId, s.id);
-    const input = { chargeId: charge.id, expectedAmount: charge.amountCents, expectedDueOn: "2020-03-01", amount: "80", dueOn: "2020-03-02", reason: "Synthetic correction" };
+    const input = { chargeId: charge.id, expectedAmount: charge.amountPaise, expectedDueOn: "2020-03-01", amount: "80", dueOn: "2020-03-02", reason: "Synthetic correction" };
     await expect(correctCharge(admin, schoolId, { ...input, amount: "29.99" })).rejects.toThrow("active payments");
     await correctCharge(admin, schoolId, input);
     await expect(correctCharge(admin, schoolId, { ...input, amount: "90" })).rejects.toThrow("changed");
-    expect((await openCharges(prisma, schoolId, s.id))[0]).toMatchObject({ amountCents: 8000, settledCents: 3000 });
+    expect((await openCharges(prisma, schoolId, s.id))[0]).toMatchObject({ amountPaise: 8000, settledPaise: 3000 });
     expect(await prisma.auditEvent.count({ where: { schoolId, entityId: charge.id, action: "CHARGE_CORRECTED" } })).toBe(1);
   });
 
@@ -110,8 +138,8 @@ describe.skipIf(process.env.FEES_E2E !== "1")("school operations in PostgreSQL",
     await bulkPromote(admin, schoolId, promotion([s.id]));
     const charges = await openCharges(prisma, schoolId, s.id);
     expect(charges).toHaveLength(3);
-    expect(charges.reduce((sum, c) => sum + c.amountCents, 0)).toBe(210001);
-    expect((await prisma.student.findUniqueOrThrow({ where: { id: s.id } })).className).toBe("6A");
+    expect(charges.reduce((sum, c) => sum + c.amountPaise, 0)).toBe(210001);
+    expect(studentProfile(await prisma.student.findUniqueOrThrow({ where: { id: s.id }, include: studentProfileInclude })).className).toBe("6A");
   });
 
   it("rolls back an entire promotion batch when a later student has a conflicting enrollment", async () => {
@@ -120,7 +148,7 @@ describe.skipIf(process.env.FEES_E2E !== "1")("school operations in PostgreSQL",
     await enrollStudent(admin, schoolId, { studentId: second.id, academicYearId: nextYearId, classId });
     await expect(bulkPromote(admin, schoolId, promotion([first.id, second.id]))).rejects.toThrow("another class");
     expect(await prisma.enrollment.count({ where: { studentId: first.id, academicYearId: nextYearId } })).toBe(0);
-    expect((await prisma.student.findUniqueOrThrow({ where: { id: first.id } })).className).toBe("5A");
+    expect(studentProfile(await prisma.student.findUniqueOrThrow({ where: { id: first.id }, include: studentProfileInclude })).className).toBe("5A");
   });
 
   it("creates staff, protects shared accounts, revokes sessions and retains audits", async () => {
@@ -137,7 +165,7 @@ describe.skipIf(process.env.FEES_E2E !== "1")("school operations in PostgreSQL",
     expect(await prisma.session.count({ where: { userId: staffId } })).toBe(0);
     expect(await verifyPassword(recovery.password, (await prisma.user.findUniqueOrThrow({ where: { id: staffId } })).passwordHash)).toBe(true);
     await revokeStaffAccess(admin, schoolId, staffId);
-    expect(await prisma.schoolMembership.count({ where: { schoolId, userId: staffId } })).toBe(0);
+    expect((await prisma.schoolMembership.findUniqueOrThrow({ where: { schoolId_userId: { schoolId, userId: staffId } } })).isActive).toBe(false);
     const events = await prisma.auditEvent.findMany({ where: { schoolId, entityId: staffId } });
     expect(events.map(event => event.action)).toEqual(expect.arrayContaining(["STAFF_ACCOUNT_CREATED", "STAFF_PASSWORD_RECOVERED", "STAFF_ACCESS_REVOKED"]));
     expect(JSON.stringify(events)).not.toContain(password);
@@ -159,14 +187,14 @@ describe.skipIf(process.env.FEES_E2E !== "1")("school operations in PostgreSQL",
     expect(after.summary.overdue).toBe(before.summary.overdue);
     await expect(enrollStudent(admin, schoolId, { studentId: s.id, academicYearId: nextYearId, classId: nextClassId })).rejects.toThrow("Reactivate");
     await expect(bulkPromote(admin, schoolId, promotion([s.id]))).rejects.toThrow("Reactivate");
-    expect((await openCharges(prisma, schoolId, s.id)).reduce((sum, charge) => sum + charge.amountCents, 0)).toBe(110001);
+    expect((await openCharges(prisma, schoolId, s.id)).reduce((sum, charge) => sum + charge.amountPaise, 0)).toBe(110001);
     const receipt = await recordPayment(accountant, schoolId, payment(s.id, "10"));
     expect(receipt.studentId).toBe(s.id);
     const withdrawn = await prisma.student.findUniqueOrThrow({ where: { id: s.id } });
     await changeStudentStatus(admin, schoolId, { ...input, status: "ACTIVE", reason: "Synthetic return", expectedUpdatedAt: withdrawn.updatedAt.toISOString() });
     await enrollStudent(admin, schoolId, { studentId: s.id, academicYearId: nextYearId, classId: nextClassId });
     expect(await prisma.auditEvent.count({ where: { schoolId, entityId: s.id, action: "STUDENT_STATUS_CHANGED" } })).toBe(2);
-    expect((await openCharges(prisma, schoolId, s.id)).reduce((sum, charge) => sum + charge.amountCents - charge.settledCents, 0)).toBe(209001);
+    expect((await openCharges(prisma, schoolId, s.id)).reduce((sum, charge) => sum + charge.amountPaise - charge.settledPaise, 0)).toBe(209001);
     expect((await schoolDashboard(otherSchoolId)).summary.outstanding).toBe(BigInt(0));
   });
 
@@ -179,21 +207,22 @@ describe.skipIf(process.env.FEES_E2E !== "1")("school operations in PostgreSQL",
     expect(await prisma.auditEvent.count({ where: { schoolId, entityId: s.id, action: "STUDENT_STATUS_CHANGED" } })).toBe(1);
   });
 
-  it("reconciles full transaction history, scopes filters and uses Kolkata dates for reversals", async () => {
+  it("reconciles full transaction history and scopes filters to recorded reversal dates", async () => {
     const s=await student();
+    await enrollStudent(admin, schoolId, { studentId: s.id, academicYearId: yearId, classId });
     const p=await recordPayment(accountant,schoolId,payment(s.id,"20","2020-06-01"));
     const d=await recordDiscount(accountant,schoolId,{studentId:s.id,amount:"5",reason:"Synthetic history test",requestKey:randomUUID()});
     await reversePayment(accountant,schoolId,{paymentId:p.id,reason:"Synthetic reversal"});
     await reverseDiscount(accountant,schoolId,{discountId:d.id,reason:"Synthetic reversal"});
-    await prisma.payment.update({where:{id:p.id},data:{reversedAt:new Date("2020-06-01T20:00:00Z")}});
-    await prisma.discount.update({where:{id:d.id},data:{createdAt:new Date("2020-06-01T19:00:00Z"),reversedAt:new Date("2020-06-01T20:00:00Z")}});
+    const reversal = await prisma.payment.findUniqueOrThrow({ where: { id: p.id } });
+    const reversalDay = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).format(reversal.reversedAt!);
     const f={q:s.admissionNumber,className:"5A",lifecycle:"ACTIVE"};
     const rows=await transactionReport(schoolId,f);
     expect(rows).toHaveLength(4);
     expect(rows.map(row=>row.kind)).toEqual(expect.arrayContaining(["PAYMENT","PAYMENT_REVERSAL","DISCOUNT","DISCOUNT_REVERSAL"]));
-    expect(rows.reduce((sum,row)=>sum+row.cashCents,0)).toBe(0);
-    expect(rows.reduce((sum,row)=>sum+row.discountCents,0)).toBe(0);
-    expect(await transactionReport(schoolId,{...f,from:"2020-06-02",to:"2020-06-02"})).toHaveLength(3);
+    expect(rows.reduce((sum,row)=>sum+row.cashPaise,0)).toBe(0);
+    expect(rows.reduce((sum,row)=>sum+row.discountPaise,0)).toBe(0);
+    expect(await transactionReport(schoolId,{...f,from:reversalDay,to:reversalDay})).toHaveLength(3);
     expect(await transactionReport(schoolId,{...f,mode:"CASH"})).toHaveLength(2);
     expect(await transactionReport(schoolId,{...f,lifecycle:"WITHDRAWN"})).toHaveLength(0);
     expect(await transactionReport(otherSchoolId,f)).toHaveLength(0);
