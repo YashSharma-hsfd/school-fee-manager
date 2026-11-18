@@ -10,6 +10,7 @@ export async function cleanupSchool(prisma: PrismaClient, schoolId: string) {
     await tx.$executeRawUnsafe('ALTER TABLE "Discount" DISABLE TRIGGER "Discount_immutable"');
     await tx.$executeRawUnsafe('ALTER TABLE "PaymentAllocation" DISABLE TRIGGER "PaymentAllocation_append_only"');
     await tx.$executeRawUnsafe('ALTER TABLE "DiscountAllocation" DISABLE TRIGGER "DiscountAllocation_append_only"');
+    await tx.$executeRawUnsafe('ALTER TABLE "LateFeePolicy" DISABLE TRIGGER "LateFeePolicy_append_only"');
     const where = { schoolId };
     await tx.paymentAllocation.deleteMany({ where });
     await tx.discountAllocation.deleteMany({ where });
@@ -19,6 +20,7 @@ export async function cleanupSchool(prisma: PrismaClient, schoolId: string) {
     await tx.enrollmentFeeAssignment.deleteMany({ where });
     await tx.enrollment.deleteMany({ where });
     await tx.feePlanItem.deleteMany({ where });
+    await tx.lateFeePolicy.deleteMany({ where });
     await tx.feePlan.deleteMany({ where });
     await tx.feeComponent.deleteMany({ where });
     await tx.studentStatusHistory.deleteMany({ where });
@@ -43,5 +45,6 @@ export async function cleanupSchool(prisma: PrismaClient, schoolId: string) {
     await tx.$executeRawUnsafe('ALTER TABLE "Discount" ENABLE TRIGGER "Discount_immutable"');
     await tx.$executeRawUnsafe('ALTER TABLE "AuditEvent" ENABLE TRIGGER "AuditEvent_append_only"');
     await tx.$executeRawUnsafe('ALTER TABLE "StudentStatusHistory" ENABLE TRIGGER "StudentStatusHistory_append_only"');
+    await tx.$executeRawUnsafe('ALTER TABLE "LateFeePolicy" ENABLE TRIGGER "LateFeePolicy_append_only"');
   });
 }

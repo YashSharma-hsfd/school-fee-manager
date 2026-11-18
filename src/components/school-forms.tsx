@@ -38,7 +38,7 @@ export function SchoolForm({ action, fields, submit, children, submitDisabled, v
   </form>;
 }
 
-export function FeePlanForm({ action, years, classes }: { action: Props["action"]; years: { value: string; label: string }[]; classes: { value: string; label: string }[] }) {
+export function FeePlanForm({ action, years, classes, lateFeesEnabled = true }: { lateFeesEnabled?: boolean; action: Props["action"]; years: { value: string; label: string }[]; classes: { value: string; label: string }[] }) {
   const componentId = useId();
   const [components, setComponents] = useState([{ name: "", amount: "" }]);
   const amounts = components.map(component => moneySchema.safeParse(component.amount));
@@ -48,6 +48,7 @@ export function FeePlanForm({ action, years, classes }: { action: Props["action"
     { name: "classId", label: "Class", options: classes },
     { name: "frequency", label: "Due-date schedule", options: [{ value: "MONTHLY", label: "Monthly (12 installments)" }, { value: "QUARTERLY", label: "Quarterly (4 installments)" }, { value: "ANNUAL", label: "Annual (1 installment)" }] },
     { name: "firstDueOn", label: "First due date", type: "date", help: "Choose a day from 1–28. All installments must fit within the academic year." },
+    ...(lateFeesEnabled ? [{ name: "lateFeeAmount", label: "Late fee per unpaid installment", value: "0", required: false, help: "Rupees per overdue installment per cycle after 15 days of grace. Enter 0 to leave late fees off. Two missed monthly cycles at 100 rupees total 300 rupees if both installments remain unpaid." }] : []),
   ]}>{values => <>
     <input type="hidden" name="components" value={JSON.stringify(components)} />
     <div className="border-t border-slate-100 pt-5"><h3 className="font-semibold">Annual fees by component</h3><p className="mt-1 text-xs leading-relaxed text-slate-500">Enter the full year’s amount in rupees for each fee, even when collecting monthly.</p></div>

@@ -178,6 +178,7 @@ model FeePlan {
   schoolClass    SchoolClass               @relation(fields: [schoolId, classId], references: [schoolId, id], onDelete: Restrict)
   items          FeePlanItem[]
   assignments    EnrollmentFeeAssignment[]
+  lateFeePolicies LateFeePolicy[]
   updatedAt      DateTime                  @default(now()) @updatedAt @db.Timestamptz(3)
 
   @@unique([schoolId, id, academicYearId, classId])
@@ -204,6 +205,21 @@ model FeePlanItem {
   @@unique([schoolId, planId, componentId, installment])
   @@unique([schoolId, id])
   @@index([schoolId, componentId])
+}
+
+// Append-only versions let a new rate apply prospectively without rewriting assessed fees.
+model LateFeePolicy {
+  id             String   @id @default(cuid())
+  schoolId       String
+  feePlanId      String
+  amountPaise    Int
+  intervalMonths Int
+  effectiveFrom  DateTime @db.Date
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+  createdById    String
+  feePlan        FeePlan  @relation(fields: [schoolId, feePlanId], references: [schoolId, id], onDelete: Restrict)
+
+  @@index([schoolId, feePlanId, effectiveFrom, createdAt])
 }
 
 model Enrollment {
@@ -242,6 +258,8 @@ model StudentCharge {
   label            String
   amountPaise      Int
   dueOn            DateTime             @db.Date
+  lateFeeForDueOn  DateTime?            @db.Date
+  lateFeeCycleOn   DateTime?            @db.Date
   createdAt        DateTime             @default(now()) @db.Timestamptz(3)
   enrollment       Enrollment?          @relation(fields: [schoolId, enrollmentId], references: [schoolId, id], onDelete: Restrict)
   planItem         FeePlanItem?         @relation(fields: [schoolId, planItemId], references: [schoolId, id], onDelete: Restrict)
@@ -250,6 +268,7 @@ model StudentCharge {
   credits          DiscountAllocation[]
 
   @@unique([schoolId, enrollmentId, planItemId])
+  @@unique([schoolId, enrollmentId, lateFeeForDueOn, lateFeeCycleOn], map: "StudentCharge_late_fee_cycle_unique")
   @@unique([schoolId, openingStudentId])
   @@unique([schoolId, id])
   @@index([schoolId, dueOn])

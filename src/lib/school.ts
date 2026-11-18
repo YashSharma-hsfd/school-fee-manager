@@ -3,6 +3,7 @@ import { redirect, notFound } from "next/navigation";
 import { readSession } from "./auth";
 import { prisma } from "./prisma";
 import { assertSchoolPermission, SchoolAccessError, type SchoolPermission } from "@/services/school-permissions";
+import { refreshLateFees } from "@/services/late-fees";
 
 export async function schoolAccess(schoolId: string, permission: SchoolPermission = "view") {
   const user = await readSession();
@@ -11,6 +12,7 @@ export async function schoolAccess(schoolId: string, permission: SchoolPermissio
   if (!membership) notFound();
   try { assertSchoolPermission(membership, permission); }
   catch (error) { if (error instanceof SchoolAccessError) notFound(); throw error; }
+  await refreshLateFees(user, schoolId);
   return { user, membership, school: membership.school };
 }
 

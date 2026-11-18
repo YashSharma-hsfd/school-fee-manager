@@ -1,30 +1,15 @@
 import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
-import { prisma } from "@/lib/prisma";
 import type { SessionUser } from "./auth";
 import { allocateOldest, dateSchema, dateOnly, FeeRuleError, installments, moneySchema } from "./fee-calculations";
-import { assertSchoolPermission, type SchoolPermission } from "./school-permissions";
+import { inSchool, idSchema } from "./school-transactions";
+export { inSchool, idSchema } from "./school-transactions";
+import { assessLateFeesInTransaction, createLateFeePolicyInTransaction, lateFeeAmountSchema, lateFeesEnabled } from "./late-fees";
+import { localDay } from "./late-fee-calculations";
 
-export const idSchema = z.string().min(1).max(128);
 const nameSchema = z.string().trim().min(1).max(100);
 type Tx = Prisma.TransactionClient;
-
-export async function inSchool<T>(actor: SessionUser, schoolId: string, permission: SchoolPermission, work: (tx: Tx) => Promise<T>): Promise<T> {
-  idSchema.parse(schoolId);
-  for (let attempt = 0; ; attempt++) {
-    try {
-      return await prisma.$transaction(async tx => {
-        const member = await tx.schoolMembership.findUnique({ where: { schoolId_userId: { schoolId, userId: actor.id } } });
-        assertSchoolPermission(member, permission);
-        return work(tx);
-      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 20_000 });
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034" && attempt < 3) continue;
-      throw error;
-    }
-  }
-}
 
 function auditEntityType(action: string) {
   if (["STUDENT_ENROLLED", "FEES_ASSIGNED"].includes(action)) return "Enrollment";
@@ -79,6 +64,7 @@ export const planSchema = z.object({
   academicYearId: idSchema, classId: idSchema,
   frequency: z.enum(["MONTHLY", "QUARTERLY", "ANNUAL"]), firstDueOn: dateSchema,
   components: z.array(z.object({ name: nameSchema, amount: moneySchema })).min(1).max(30),
+  lateFeeAmount: lateFeeAmountSchema,
 }).refine(data => new Set(data.components.map(component => component.name.toLowerCase())).size === data.components.length, "Fee component names must be unique");
 
 export async function createFeePlan(actor: SessionUser, schoolId: string, input: unknown) {
@@ -96,10 +82,14 @@ export async function createFeePlan(actor: SessionUser, schoolId: string, input:
         ...item, schoolId, planId: plan.id, componentId: feeComponent.id, label: component.name,
       })) });
     }
+    if (data.lateFeeAmount > 0) {
+      if (!lateFeesEnabled()) throw new FeeRuleError("The late-fee module is disabled.");
+      await createLateFeePolicyInTransaction(tx, actor, schoolId, plan.id, data.lateFeeAmount, 12 / count, new Date(`${localDay(new Date())}T00:00:00Z`));
+    }
     for (const enrollment of await tx.enrollment.findMany({ where: { schoolId, academicYearId: year.id, classId: schoolClass.id, feeAssignment: null } })) await assignEnrollmentFees(tx, actor, schoolId, enrollment);
     await audit(tx, actor, schoolId, "FEE_PLAN_CREATED", plan.id, {
       academicYearId: year.id, classId: schoolClass.id, frequency: data.frequency,
-      components: data.components.map(component => ({ name: component.name, amountPaise: component.amount })), firstDueOn: dateOnly(data.firstDueOn),
+      components: data.components.map(component => ({ name: component.name, amountPaise: component.amount })), firstDueOn: dateOnly(data.firstDueOn), lateFeeAmountPaise: data.lateFeeAmount,
     });
     return plan;
   });
@@ -169,6 +159,7 @@ export async function recordPayment(actor: SessionUser, schoolId: string, input:
     }
     const student = await tx.student.findFirst({ where: { schoolId, id: data.studentId } });
     if (!student) throw new FeeRuleError("Student not found in this school");
+    await assessLateFeesInTransaction(tx, schoolId, student.id);
     const allocations = allocateOldest(data.amount, await openCharges(tx, schoolId, student.id));
     const school = await tx.school.update({ where: { id: schoolId }, data: { receiptSequence: { increment: 1 } } });
     const receiptNumber = `${school.code}-${String(school.receiptSequence).padStart(7, "0")}`;
@@ -181,7 +172,7 @@ export async function recordPayment(actor: SessionUser, schoolId: string, input:
   });
 }
 
-export const discountSchema = z.object({ studentId: idSchema, amount: moneySchema, reason: z.string().trim().min(3).max(500), requestKey: z.uuid() });
+export const discountSchema = z.object({ studentId: idSchema, amount: moneySchema, reason: z.string().trim().min(3).max(500), requestKey: z.uuid(), scope: z.enum(["ALL", "LATE_FEES"]).optional() });
 export async function recordDiscount(actor: SessionUser, schoolId: string, input: unknown) {
   const data = discountSchema.parse(input);
   const requestHash = fingerprint(data);
@@ -192,10 +183,12 @@ export async function recordDiscount(actor: SessionUser, schoolId: string, input
       return prior;
     }
     if (!await tx.student.findFirst({ where: { schoolId, id: data.studentId } })) throw new FeeRuleError("Student not found in this school");
-    const allocations = allocateOldest(data.amount, await openCharges(tx, schoolId, data.studentId));
+    await assessLateFeesInTransaction(tx, schoolId, data.studentId);
+    const charges = await openCharges(tx, schoolId, data.studentId);
+    const allocations = allocateOldest(data.amount, data.scope === "LATE_FEES" ? charges.filter(charge => charge.lateFeeForDueOn !== null) : charges);
     const discount = await tx.discount.create({ data: { schoolId, studentId: data.studentId, amountPaise: data.amount, reason: data.reason, requestKey: data.requestKey, requestHash, recordedById: actor.id, recordedByName: actor.name } });
     await tx.discountAllocation.createMany({ data: allocations.map(allocation => ({ ...allocation, schoolId, discountId: discount.id })) });
-    await audit(tx, actor, schoolId, "DISCOUNT_RECORDED", discount.id, { studentId: data.studentId, amountPaise: data.amount, reason: data.reason, allocations });
+    await audit(tx, actor, schoolId, "DISCOUNT_RECORDED", discount.id, { studentId: data.studentId, amountPaise: data.amount, reason: data.reason, scope: data.scope ?? "ALL", allocations });
     return discount;
   });
 }

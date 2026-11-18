@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ session: vi.fn(), membership: vi.fn(), redirect: vi.fn(), notFound: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ readSession: mocks.session }));
+vi.mock("@/services/late-fees", () => ({ refreshLateFees: vi.fn() }));
 vi.mock("@/lib/prisma", () => ({ prisma: { schoolMembership: { findUnique: mocks.membership } } }));
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect, notFound: mocks.notFound }));
 import { schoolAccess } from "../../src/lib/school";

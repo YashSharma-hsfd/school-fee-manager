@@ -1,9 +1,10 @@
 # Finalized school database
 
-Implemented on the `school-fee-manager-pilot` database in the Yash Sharma organization.
+The base finalized schema was implemented on the `school-fee-manager-pilot` database in the Yash Sharma organization.
+The late-fee extension requires its separate migration on each database; local verification does not deploy it to the cloud.
 The authoritative field names, nullability, enums and PostgreSQL native types are in
 [`prisma/schema.prisma`](../prisma/schema.prisma). SQL-only constraints and triggers
-are versioned in the Prisma migrations. There are **27 application tables**, plus
+are versioned in the Prisma migrations. The current schema has **28 application tables**, plus
 Prisma's internal `_prisma_migrations` table.
 
 ## Table inventory
@@ -31,7 +32,8 @@ Prisma's internal `_prisma_migrations` table.
 | Fees | `FeeComponent` | School-specific fee categories and active status |
 | Fees | `FeePlan` | One plan per school/year/class |
 | Fees | `FeePlanItem` | Component, installment, label, integer paise and due date |
-| Fees | `StudentCharge` | Snapshotted assigned charge or imported opening due |
+| Fees | `LateFeePolicy` | Append-only rates, recurrence frequency and effective dates per school/class fee plan |
+| Fees | `StudentCharge` | Assigned principal, imported opening due or uniquely identified installment/cycle late fee; see [late-fee rules and rollback](late-fees.md) |
 | Finance | `Payment` | Payment, method enum, receipt snapshots, idempotency and reversal details |
 | Finance | `PaymentAllocation` | Immutable distribution of payment across a student's charges |
 | Finance | `Discount` | Discount, reason, idempotency, recorder and reversal details |
