@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
+import { PrismaClient } from "@prisma/client";
 import { prisma } from "../../src/lib/prisma";
-import { createClass, createFeePlan, createYear, enrollStudent, openCharges, recordDiscount, recordPayment, reversePayment } from "../../src/services/fees";
+import { audit, createClass, createFeePlan, createYear, enrollStudent, inSchool, openCharges, recordDiscount, recordPayment, reversePayment } from "../../src/services/fees";
 import { balances } from "../../src/services/fee-calculations";
 import { schoolReport } from "../../src/services/fee-reports";
 import { cleanupSchool } from "../helpers/cleanup-school";
@@ -83,6 +84,26 @@ describe.skipIf(process.env.FEES_E2E !== "1")("PostgreSQL fee ledger", () => {
     expect(results.filter(result => result.status === "fulfilled")).toHaveLength(1);
     expect(await prisma.payment.count({ where: { schoolId, studentId: record.id } })).toBe(1);
     expect(balances(await openCharges(prisma, schoolId, record.id), new Date()).outstanding).toBe(30001);
+  });
+  it("restarts a stale serializable transaction without committing its failed audit entry", async () => {
+    const probe = await createClass(admin, schoolId, "Synthetic retry probe");
+    const competitor = new PrismaClient();
+    let attempts = 0;
+    try {
+      await inSchool(admin, schoolId, "configure", async tx => {
+        attempts++;
+        const before = await tx.schoolClass.findFirstOrThrow({ where: { schoolId, id: probe.id } });
+        await audit(tx, admin, schoolId, "CLASS_RETRY_PROBE", probe.id, { beforeSortOrder: before.sortOrder });
+        // A separate connection commits after our snapshot was read, guaranteeing a real write conflict.
+        if (attempts === 1) await competitor.schoolClass.update({ where: { id: probe.id }, data: { sortOrder: { increment: 1 } } });
+        await tx.schoolClass.update({ where: { id: probe.id }, data: { sortOrder: before.sortOrder + 1 } });
+      });
+      expect(attempts).toBe(2);
+      expect((await prisma.schoolClass.findUniqueOrThrow({ where: { id: probe.id } })).sortOrder).toBe(2);
+      const events = await prisma.auditEvent.findMany({ where: { schoolId, action: "CLASS_RETRY_PROBE", entityId: probe.id } });
+      expect(events).toHaveLength(1);
+      expect(events[0].details).toEqual({ beforeSortOrder: 1 });
+    } finally { await competitor.$disconnect(); }
   });
   it("makes report totals agree with charge-level balances", async () => {
     const report = await schoolReport(schoolId, 1, "all");

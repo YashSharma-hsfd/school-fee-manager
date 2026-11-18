@@ -1,9 +1,12 @@
 import type { PrismaClient } from "@prisma/client";
+export function assertDisposableTestDatabase(name: string) {
+  if (!/^school_fee_test_[a-f0-9]{16}$/.test(name)) throw new Error("Database tests require a disposable school_fee_test database. Run npm run test:integration instead of enabling FEES_E2E against a regular database.");
+}
 // Only for uniquely named fixtures in a disposable test database.
 export async function cleanupSchool(prisma: PrismaClient, schoolId: string) {
   await prisma.$transaction(async tx => {
     const [{ name }] = await tx.$queryRaw<{ name: string }[]>`SELECT current_database() AS name`;
-    if (!/^school_fee_test_[a-f0-9]{16}$/.test(name)) throw new Error("Fixture cleanup requires the disposable test database");
+    assertDisposableTestDatabase(name);
     await tx.$executeRawUnsafe('ALTER TABLE "AuditEvent" DISABLE TRIGGER "AuditEvent_append_only"');
     await tx.$executeRawUnsafe('ALTER TABLE "StudentStatusHistory" DISABLE TRIGGER "StudentStatusHistory_append_only"');
     await tx.$executeRawUnsafe('ALTER TABLE "Payment" DISABLE TRIGGER "Payment_immutable"');
